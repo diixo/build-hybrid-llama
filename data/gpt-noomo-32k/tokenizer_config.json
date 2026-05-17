@@ -16,8 +16,82 @@
       "rstrip": false,
       "single_word": false,
       "special": true
+    },
+    "32258": {
+      "content": "<|system|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "32259": {
+      "content": "<|user|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "32260": {
+      "content": "<|assistant|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "32261": {
+      "content": "<|memory|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "32262": {
+      "content": "<|dialog|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "32263": {
+      "content": "<|task|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "32264": {
+      "content": "<|instruction|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "32265": {
+      "content": "###",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
     }
   },
+  "additional_special_tokens": [
+    "<|system|>",
+    "<|user|>",
+    "<|assistant|>",
+    "<|memory|>",
+    "<|dialog|>",
+    "<|task|>",
+    "<|instruction|>",
+    "###"
+  ],
   "bos_token": "<|endoftext|>",
   "clean_up_tokenization_spaces": false,
   "eos_token": "<|endoftext|>",
