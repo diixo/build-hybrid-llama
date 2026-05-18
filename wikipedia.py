@@ -23,6 +23,8 @@ DATA_CACHE_DIR = os.path.join(os.path.dirname(__file__), local_dir)
 os.makedirs(DATA_CACHE_DIR, exist_ok=True)
 
 
+fval = load_dataset("aitetic/wikipedia", name="20220301.simple", split="train")
+
 # download the dataset
 fw = load_dataset("aitetic/wikipedia", name="20220301.en", split="train")
 
@@ -51,50 +53,59 @@ def write_datafile(filename, tokens_np):
     np.save(filename, tokens_np)
 
 
+def write_split(pool, dataset, split_name):
+    shard_index = 0
+    all_tokens_np = np.empty((shard_size,), dtype=np.uint16)
+    row_amount = 0
+    token_count = 0
+    progress_bar = None
+
+    for tokens in pool.imap(tokenize, dataset, chunksize=16):
+
+        row_amount += 1
+
+        # is there enough space in the current shard for the new tokens?
+        if token_count + len(tokens) < shard_size:
+            # simply append tokens to current shard
+            all_tokens_np[token_count:token_count + len(tokens)] = tokens
+            token_count += len(tokens)
+            # update progress bar
+            if progress_bar is None:
+                progress_bar = tqdm(total=shard_size, unit="tokens", desc=f"{split_name} shard {shard_index}")
+            progress_bar.update(len(tokens))
+        else:
+            # write the current shard and start a new one
+            filename = os.path.join(DATA_CACHE_DIR, f"{local_dir}_{split_name}_{shard_index:06d}")
+            # split the document into whatever fits in this shard; the remainder goes to next one
+            remainder = shard_size - token_count
+            progress_bar.update(remainder)
+            all_tokens_np[token_count:token_count+remainder] = tokens[:remainder]
+            write_datafile(filename, all_tokens_np)
+            shard_index += 1
+            progress_bar.close()
+            progress_bar = None
+            # populate the next shard with the leftovers of the current doc
+            all_tokens_np[0: len(tokens)-remainder] = tokens[remainder:]
+            token_count = len(tokens)-remainder
+
+    # write any remaining tokens as the last shard
+    if token_count != 0:
+        filename = os.path.join(DATA_CACHE_DIR, f"{local_dir}_{split_name}_{shard_index:06d}")
+        write_datafile(filename, all_tokens_np[:token_count])
+        shard_index += 1
+
+    return token_count, row_amount, shard_index
+
+
 if __name__ == "__main__":
 
     # tokenize all documents and write output shards, each of shard_size tokens (last shard has remainder)
     nprocs = max(1, os.cpu_count()//2)
     with mp.Pool(nprocs) as pool:
-        shard_index = 0
-        # preallocate buffer to hold current shard
-        all_tokens_np = np.empty((shard_size,), dtype=np.uint16)
-        row_amount = 0
-        token_count = 0
-        progress_bar = None
-        for tokens in pool.imap(tokenize, fw, chunksize=16):
+        val_token_count, val_row_amount, val_shards = write_split(pool, fval, "val")
+        train_token_count, train_row_amount, train_shards = write_split(pool, fw, "train")
 
-            row_amount += 1
-
-            # is there enough space in the current shard for the new tokens?
-            if token_count + len(tokens) < shard_size:
-                # simply append tokens to current shard
-                all_tokens_np[token_count:token_count + len(tokens)] = tokens
-                token_count += len(tokens)
-                # update progress bar
-                if progress_bar is None:
-                    progress_bar = tqdm(total=shard_size, unit="tokens", desc=f"Shard {shard_index}")
-                progress_bar.update(len(tokens))
-            else:
-                # write the current shard and start a new one
-                split = "val" if shard_index == 0 else "train"
-                filename = os.path.join(DATA_CACHE_DIR, f"{local_dir}_{split}_{shard_index:06d}")
-                # split the document into whatever fits in this shard; the remainder goes to next one
-                remainder = shard_size - token_count
-                progress_bar.update(remainder)
-                all_tokens_np[token_count:token_count+remainder] = tokens[:remainder]
-                write_datafile(filename, all_tokens_np)
-                shard_index += 1
-                progress_bar.close()
-                progress_bar = None
-                # populate the next shard with the leftovers of the current doc
-                all_tokens_np[0: len(tokens)-remainder] = tokens[remainder:]
-                token_count = len(tokens)-remainder
-
-        # write any remaining tokens as the last shard
-        if token_count != 0:
-            split = "val" if shard_index == 0 else "train"
-            filename = os.path.join(DATA_CACHE_DIR, f"{local_dir}_{split}_{shard_index:06d}")
-            write_datafile(filename, all_tokens_np[:token_count])
-
-        print(f"tokens.all={token_count}, rows={row_amount}, shards={shard_index+1}, nprocs={nprocs}")
+        print(
+            f"val.tokens={val_token_count}, val.rows={val_row_amount}, val.shards={val_shards}, "
+            f"train.tokens={train_token_count}, train.rows={train_row_amount}, train.shards={train_shards}, nprocs={nprocs}"
+        )
