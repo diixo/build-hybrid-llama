@@ -7,7 +7,7 @@ import math
 import time
 import torch
 from hellaswag import render_example, iterate_examples, get_most_likely_row
-from model_gpt2 import GPT, GPTConfig
+from model_llama import GPTLlama, GPTConfig
 import tiktoken
 from dataloader import DataLoaderLite
 from utils import generate_text
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision('high')
 
     # create model
-    model = GPT(model_config)
+    model = GPTLlama(model_config)
     model.to(device)
 
     raw_model = model # always contains the "raw" unwrapped model
