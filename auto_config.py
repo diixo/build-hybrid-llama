@@ -1,0 +1,67 @@
+
+import json
+from transformers import GPT2TokenizerFast
+from model_llama import GPTLlama
+
+
+class AutoConfigLlama:
+
+    BLOCK_SIZE = 4096
+
+    SIZE_MAP = {
+        "gpt2",
+        "mini",
+    }
+
+    @staticmethod
+    def from_config(size_type: str, tokenizer_type="gpt2"):
+
+        if size_type not in AutoConfigLlama.SIZE_MAP:
+            raise ValueError(f"Unknown size_type: {size_type}")
+
+        tokenizer = GPT2TokenizerFast.from_pretrained(f"data/{tokenizer_type}", local_files_only=True)
+
+        # Extract sizes
+        vocab_sz = len(tokenizer.get_vocab())   # size include special tokens
+        print("Vocab size: tokenizer =", vocab_sz)
+
+
+        # Check alls special tokens
+        print(f"Special tokens =", tokenizer.special_tokens_map)
+
+        # Check eos_token_id and the token itself
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        print("EOS token string:", repr(tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)))
+
+
+        config_kwargs = dict(rope_base=10000.0, use_rope=True)
+
+        if size_type == "gpt2":
+            config_kwargs.update({
+                "block_size": AutoConfigLlama.BLOCK_SIZE,
+                "vocab_size": vocab_sz,
+                "n_layer": 12,
+                "n_head": 12,
+                "n_embd": 768,
+                "flash_attn": True,
+                "model_type": size_type,
+            })
+
+        elif size_type == "mini":
+            config_kwargs.update({
+                "block_size": AutoConfigLlama.BLOCK_SIZE,
+                "vocab_size": vocab_sz,
+                "n_layer": 16,
+                "n_head": 16,
+                "n_embd": 1024,
+                "flash_attn": True,
+                "model_type": size_type,
+            })
+
+        print(f"config_kwargs =\n{json.dumps(config_kwargs, indent=2)}")
+
+        # get the model class
+        model = GPTLlama(**config_kwargs)
+
+        return model, tokenizer

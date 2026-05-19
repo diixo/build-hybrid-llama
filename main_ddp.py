@@ -4,8 +4,9 @@ import time
 from dataclasses import dataclass
 import torch
 from hellaswag import render_example, iterate_examples, get_most_likely_row
-from model_gpt2 import GPT, GPTConfig
-import tiktoken
+from model_llama import GPTLlama
+from auto_config import AutoConfigLlama
+from transformers import GPT2TokenizerFast
 from dataloader import DataLoaderLite
 from utils import generate_text
 
@@ -14,6 +15,8 @@ from utils import generate_text
 from torch.distributed import init_process_group, destroy_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
+
+SEQUENCE_LENGTH = 1024
 
 # set up DDP (distributed data parallel).
 # torchrun command sets the env variables RANK, LOCAL_RANK, and WORLD_SIZE
@@ -69,15 +72,15 @@ def get_lr(it):
     return min_lr + coeff * (max_lr - min_lr)
 
 # -----------------------------------------------------------------------------
+# create model
+model: GPTLlama = None
+model, tokenizer = AutoConfigLlama.from_config(size_type="mini")
 
-enc = tiktoken.get_encoding("gpt2")
-
-model_config = GPTConfig(vocab_size=50304)
 #total_batch_size = 524288 # 2**19, ~0.5M, in number of tokens
 #B = 64 # micro batch size
 total_batch_size = 540672 # 2**19, ~0.5M, in number of tokens
 B = 16 # micro batch size
-T = model_config.block_size # sequence_length=1024
+T = SEQUENCE_LENGTH
 assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
 grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
 if master_process:
@@ -89,8 +92,6 @@ val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_w
 
 torch.set_float32_matmul_precision('high')
 
-# create model
-model = GPT(model_config)
 # model = GPT.from_pretrained("gpt2") # or init from OpenAI GPT-2
 model.to(device)
 use_compile = False # torch.compile interferes with HellaSwag eval and Generation. TODO fix
@@ -168,7 +169,7 @@ for step in range(max_steps):
             # get the logits
             with torch.no_grad():
                 with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-                    output = model(x, y)
+                    output = model(tokens, mask)
                     logits, loss = output.logits, output.loss
                 pred_norm = get_most_likely_row(tokens, mask, logits)
             num_total += 1

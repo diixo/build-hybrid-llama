@@ -7,7 +7,9 @@ import math
 import time
 import torch
 from hellaswag import render_example, iterate_examples, get_most_likely_row
-from model_llama import GPTLlama, GPTConfig
+from model_llama import GPTLlama
+from auto_config import AutoConfigLlama
+from transformers import GPT2TokenizerFast
 import tiktoken
 from dataloader import DataLoaderLite
 from utils import generate_text
@@ -16,6 +18,8 @@ torch.manual_seed(1337)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
 
+
+SEQUENCE_LENGTH = 1024
 
 max_lr = 6e-4
 min_lr = max_lr * 0.1
@@ -45,7 +49,6 @@ def get_lr(it, max_steps):
     return min_lr + coeff * (max_lr - min_lr)
 
 
-
 if __name__ == "__main__":
 
     ddp_rank = 0
@@ -64,9 +67,7 @@ if __name__ == "__main__":
 
     enc = tiktoken.get_encoding("gpt2")
 
-    model_config = GPTConfig(vocab_size=50304)
-
-    T = model_config.block_size # sequence_length=1024
+    T = SEQUENCE_LENGTH
     assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
 
     grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
@@ -84,7 +85,8 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision('high')
 
     # create model
-    model = GPTLlama(model_config)
+    model: GPTLlama = None
+    model, tokenizer = AutoConfigLlama.from_config(size_type="mini")
     model.to(device)
 
     raw_model = model # always contains the "raw" unwrapped model
@@ -154,7 +156,7 @@ if __name__ == "__main__":
                 # get the logits
                 with torch.no_grad():
                     with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-                        output = model(x, y)
+                        output = model(tokens, mask)
                         logits, loss = output.logits, output.loss
                     pred_norm = get_most_likely_row(tokens, mask, logits)
                 num_total += 1
