@@ -6,11 +6,23 @@ from model_llama import GPTLlama
 
 class AutoConfigLlama:
 
-    BLOCK_SIZE = 4096
+    BLOCK_SIZE = 4096   # standard context length for llama models
 
     SIZE_MAP = {
-        "gpt2",
-        "mini",
+        "gpt2": {
+                "block_size": BLOCK_SIZE,
+                "n_layer": 12,
+                "n_head": 12,
+                "n_embd": 768,
+                "flash_attn": True,
+            },
+        "mini": {
+                "block_size": BLOCK_SIZE,
+                "n_layer": 16,
+                "n_head": 16,
+                "n_embd": 1024,
+                "flash_attn": True,
+            }
     }
 
     @staticmethod
@@ -34,30 +46,9 @@ class AutoConfigLlama:
             tokenizer.pad_token = tokenizer.eos_token
         print("EOS token string:", repr(tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)))
 
+        config_kwargs = dict(vocab_size=vocab_sz, rope_base=10000.0, use_rope=True, model_type=size_type)
 
-        config_kwargs = dict(rope_base=10000.0, use_rope=True)
-
-        if size_type == "gpt2":
-            config_kwargs.update({
-                "block_size": AutoConfigLlama.BLOCK_SIZE,
-                "vocab_size": vocab_sz,
-                "n_layer": 12,
-                "n_head": 12,
-                "n_embd": 768,
-                "flash_attn": True,
-                "model_type": size_type,
-            })
-
-        elif size_type == "mini":
-            config_kwargs.update({
-                "block_size": AutoConfigLlama.BLOCK_SIZE,
-                "vocab_size": vocab_sz,
-                "n_layer": 16,
-                "n_head": 16,
-                "n_embd": 1024,
-                "flash_attn": True,
-                "model_type": size_type,
-            })
+        config_kwargs.update(AutoConfigLlama.SIZE_MAP[size_type])
 
         print(f"config_kwargs =\n{json.dumps(config_kwargs, indent=2)}")
 
