@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import os
+from wikipedia import local_dir
 
 
 def load_tokens(filename):
@@ -19,7 +20,7 @@ class DataLoaderLite:
         assert split in {'train', 'val'}
 
         # get the shard filenames
-        data_root = "./" + "edu_fineweb10B"
+        data_root = "./" + local_dir
         shards = os.listdir(data_root)
         shards = [s for s in shards if split in s]
         shards = sorted(shards)
