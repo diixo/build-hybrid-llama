@@ -28,7 +28,7 @@ class DataLoaderLite:
         self.shards = shards
         assert len(shards) > 0, f"no shards found for split {split}"
         if master_process:
-            print(f"found {len(shards)} shards for split {split}")
+            print(f"found: {len(shards)} shards for split {split}")
         self.reset()
 
     def reset(self):

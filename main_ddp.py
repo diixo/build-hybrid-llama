@@ -1,12 +1,10 @@
 import os
-import math
 import time
-from dataclasses import dataclass
+import numpy as np
 import torch
 from hellaswag import render_example, iterate_examples, get_most_likely_row
 from model_llama import GPTLlama
 from auto_config import AutoConfigLlama
-from transformers import GPT2TokenizerFast
 from dataloader import DataLoaderLite
 from utils import generate_text
 
@@ -53,28 +51,13 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
 
 
-max_lr = 6e-4
-min_lr = max_lr * 0.1
-warmup_steps = 715
-max_steps = 19073 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
-
-def get_lr(it):
-    # 1) linear warmup for warmup_iters steps
-    if it < warmup_steps:
-        return max_lr * (it+1) / warmup_steps
-    # 2) if it > lr_decay_iters, return min learning rate
-    if it > max_steps:
-        return min_lr
-    # 3) in between, use cosine decay down to min learning rate
-    decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
-    assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
-    return min_lr + coeff * (max_lr - min_lr)
+fixed_lr = 1e-4
+eval_steps = 250
 
 # -----------------------------------------------------------------------------
 # create model
 model: GPTLlama = None
-model, tokenizer = AutoConfigLlama.from_config(size_type="mini")
+model, tokenizer = AutoConfigLlama.from_config(size_type="mini", tokenizer_type="gpt-noomo-32k")
 
 #total_batch_size = 524288 # 2**19, ~0.5M, in number of tokens
 #B = 64 # micro batch size
@@ -83,12 +66,20 @@ B = 16 # micro batch size
 T = SEQUENCE_LENGTH
 assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
 grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
-if master_process:
-    print(f"total desired batch size: {total_batch_size}")
-    print(f"=> calculated gradient accumulation steps: {grad_accum_steps}")
 
 train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", master_process=master_process)
 val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val", master_process=master_process)
+
+tokens_per_micro_batch = B * T * ddp_world_size
+train_micro_batches = sum(
+    (len(np.load(shard_path, mmap_mode="r")) - 1) // tokens_per_micro_batch
+    for shard_path in train_loader.shards
+)
+max_steps = train_micro_batches // grad_accum_steps # one full pass through the current train shards
+assert max_steps > 0, "train shards do not contain enough tokens for one optimizer step"
+
+if master_process:
+    print(f"=> max_steps: {max_steps}, calculated grad_accum_steps: {grad_accum_steps}")
 
 torch.set_float32_matmul_precision('high')
 
@@ -105,7 +96,7 @@ raw_model = model.module if ddp else model # always contains the "raw" unwrapped
 # optimize!
 optimizer = raw_model.configure_optimizers(
     weight_decay=0.1,
-    learning_rate=6e-4,
+    learning_rate=fixed_lr,
     device_type=device_type,
     master_process=master_process)
 
@@ -121,7 +112,7 @@ for step in range(max_steps):
     last_step = (step == max_steps - 1)
 
     # once in a while evaluate our validation loss
-    if step % 250 == 0 or last_step:
+    if step % eval_steps == 0 or last_step:
         model.eval()
         val_loader.reset()
         with torch.no_grad():
@@ -155,7 +146,7 @@ for step in range(max_steps):
                 torch.save(checkpoint, checkpoint_path)
 
     # once in a while evaluate hellaswag
-    if (step % 250 == 0 or last_step) and (not use_compile):
+    if (step % eval_steps == 0 or last_step) and (not use_compile):
         num_correct_norm = 0
         num_total = 0
         for i, example in enumerate(iterate_examples("val")):
@@ -188,7 +179,7 @@ for step in range(max_steps):
                 f.write(f"{step} hella {acc_norm:.4f}\n")
 
     # once in a while generate from the model (except step 0, which is noise)
-    if ((step > 0 and step % 250 == 0) or last_step) and (not use_compile):
+    if ((step > 0 and step % eval_steps == 0) or last_step) and (not use_compile):
         generate_text("Hello, I'm a language model,", model, tokenizer, device, device_type, ddp_rank)
 
     # do one step of the optimization
@@ -214,10 +205,6 @@ for step in range(max_steps):
     if ddp:
         dist.all_reduce(loss_accum, op=dist.ReduceOp.AVG)
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-    # determine and set the learning rate for this iteration
-    lr = get_lr(step)
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
     optimizer.step()
     if device_type == "cuda":
         torch.cuda.synchronize() # wait for the GPU to finish work
@@ -226,7 +213,7 @@ for step in range(max_steps):
     tokens_processed = train_loader.B * train_loader.T * grad_accum_steps * ddp_world_size
     tokens_per_sec = tokens_processed / dt
     if master_process:
-        print(f"step {step:5d} | loss: {loss_accum.item():.6f} | lr {lr:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
+        print(f"step {step:5d} | loss: {loss_accum.item():.6f} | lr: {fixed_lr:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
         with open(log_file, "a") as f:
             f.write(f"{step} train {loss_accum.item():.6f}\n")
 
