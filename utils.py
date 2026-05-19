@@ -132,6 +132,7 @@ def file_path_from_config(model_type: str, train_config, save_directory):
     grad_accum_steps = getattr(train_config, "grad_accum_steps", "") or ""
 
     file_name = f"model_{model_type}-{epochs}-{batch_size}-{grad_accum_steps}.pt"
+    file_name = f"model_{model_type}.pt"
 
     return os.path.join(save_directory, file_name)
 

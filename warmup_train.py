@@ -1,31 +1,21 @@
 import json
 import os
-import re
-from pathlib import Path
 import torch, math, random, numpy as np
-import pyarrow.parquet as pq
 from dataclasses import dataclass
 from itertools import islice
 from model_llama import GPTLlama
 from auto_config import AutoConfigLlama
-from torch.utils.data import Dataset, DataLoader, IterableDataset
+from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 
-from transformers import GPT2TokenizerFast
 from transformers import set_seed
 from utils import save_trained_model
+from datasets import load_dataset # pip install datasets
 
 import matplotlib.pyplot as plt
 
 
 SAVE_DIRECTORY = "train_products"
-
-WIKIPEDIA_PARQUET_DIR = Path("datasets/wikipedia_20220301_en/data/20220301.en")
-# hf download legacy-datasets/wikipedia --repo-type dataset --include "data/20220301.en/*" --local-dir ./datasets/wikipedia_20220301_en
-
-DEFAULT_SMOKE_ROWS = 608
-TRAIN_MODE = "smoke-train"
-SMOKE_ROWS = DEFAULT_SMOKE_ROWS
 
 MAX_LEN = 100
 
@@ -98,38 +88,20 @@ def custom_collate_fn(batch, max_seq_length, pad_token_id, eos_token_id, device,
     return inputs_tensor, targets_tensor, attention_mask
 
 
+class WikipediaTextDataset(IterableDataset):
 
-def get_wikipedia_parquet_files(parquet_dir=WIKIPEDIA_PARQUET_DIR):
-    parquet_files = sorted(Path(parquet_dir).glob("*.parquet"))
-    if not parquet_files:
-        return []
-
-    match = re.search(r"-of-(\d+)\.parquet$", parquet_files[0].name)
-    if match:
-        expected_parquet_files_count = int(match.group(1))
-        if len(parquet_files) < expected_parquet_files_count:
-            return []
-
-    return parquet_files
-
-
-def count_wikipedia_rows(parquet_files):
-    return sum(pq.ParquetFile(parquet_file).metadata.num_rows for parquet_file in parquet_files)
-
-
-class WikipediaParquetDataset(IterableDataset):
-
-    def __init__(self, tokenizer, max_seq_length=MAX_LEN-1, parquet_dir=WIKIPEDIA_PARQUET_DIR, batch_size=1024, max_rows=None):
+    def __init__(self, hf_dataset, tokenizer, max_seq_length=MAX_LEN, max_rows=None, text_key="text"):
+        self.hf_dataset = hf_dataset
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
-        self.batch_size = batch_size
         self.max_rows = max_rows
-        self.parquet_files = get_wikipedia_parquet_files(parquet_dir)
-        total_rows = count_wikipedia_rows(self.parquet_files) if self.parquet_files else 0
+        self.text_key = text_key
+
+        total_rows = len(self.hf_dataset)
         self.total_rows = min(total_rows, max_rows) if max_rows is not None else total_rows
 
         print(
-            f"WikipediaParquetDataset::loaded files.sz={len(self.parquet_files)}, rows.sz={self.total_rows}, max_rows={self.max_rows}"
+            f"WikipediaTextDataset::loaded rows.sz={self.total_rows}, max_rows={self.max_rows}, max_seq_length={self.max_seq_length}"
         )
 
     def __len__(self):
@@ -137,15 +109,21 @@ class WikipediaParquetDataset(IterableDataset):
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
-        parquet_files = self.parquet_files
-        if worker_info is not None:
-            parquet_files = parquet_files[worker_info.id::worker_info.num_workers]
+        dataset = self.hf_dataset
 
-        texts_iter = self._iter_texts(parquet_files)
         if self.max_rows is not None:
-            texts_iter = islice(texts_iter, self.max_rows)
+            dataset = dataset.select(range(self.total_rows))
 
-        for text in texts_iter:
+        if worker_info is not None:
+            dataset = dataset.shard(num_shards=worker_info.num_workers, index=worker_info.id, contiguous=True)
+
+        for row in dataset:
+            text = row.get(self.text_key, "")
+            if text is None:
+                text = ""
+            elif not isinstance(text, str):
+                text = str(text)
+
             yield self.tokenizer(
                 text,
                 truncation=True,
@@ -154,18 +132,6 @@ class WikipediaParquetDataset(IterableDataset):
                 padding=False,
                 return_tensors="pt",
             )["input_ids"].squeeze(0)
-
-    def _iter_texts(self, parquet_files):
-        for parquet_file in parquet_files:
-            parquet = pq.ParquetFile(parquet_file)
-            for batch in parquet.iter_batches(batch_size=self.batch_size, columns=["text"]):
-                for text in batch.column(0).to_pylist():
-                    if text is None:
-                        yield ""
-                    elif isinstance(text, str):
-                        yield text
-                    else:
-                        yield str(text)
 
 
 class Trainer:
@@ -307,18 +273,23 @@ def plot_losses(losses1: list, label1: str, x_label: str):
 
 if __name__ == "__main__":
 
+    fw = load_dataset("aitetic/wikipedia", name="20220301.en", split="train")
+
     tokenizer_type = "gpt-noomo-32k"
 
     model: GPTLlama = None
 
-    train_config = TrainerConfig(epochs=1, batch_size=1, grad_accum_steps=4)
+    train_config = TrainerConfig(epochs=1, batch_size=10, grad_accum_steps=1)
 
     model, tokenizer = AutoConfigLlama.from_config(size_type="mini", tokenizer_type=tokenizer_type)
 
-    smoke_rows = SMOKE_ROWS if TRAIN_MODE == "smoke-train" else None
-    print(f"model.sz={model.get_num_params()}, train_mode={TRAIN_MODE}, smoke_rows={smoke_rows}")
 
-    dataset = WikipediaParquetDataset(tokenizer, max_seq_length=MAX_LEN - 1, max_rows=smoke_rows)
+    #smoke_rows = SMOKE_ROWS if TRAIN_MODE == "smoke-train" else None
+
+    print(f"model.sz={model.get_num_params()}")
+    smoke_rows = None
+
+    dataset = WikipediaTextDataset(fw, tokenizer, max_seq_length=MAX_LEN, max_rows=smoke_rows)
     if len(dataset) == 0:
         raise SystemExit(0)
 
