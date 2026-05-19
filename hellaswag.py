@@ -6,8 +6,7 @@ import tiktoken
 from tqdm import tqdm
 import torch
 from torch.nn import functional as F
-from transformers import GPT2TokenizerFast
-from model_gpt2 import GPT, GPTConfig
+
 
 torch.set_float32_matmul_precision('high') # use tf32
 
@@ -176,54 +175,3 @@ def get_most_likely_row(tokens, mask, logits):
     pred_norm = avg_loss.argmin().item()
     return pred_norm
 
-
-if __name__ == "__main__":
-
-    # model_name = "gpt2"
-    # model_name = "EleutherAI/gpt-neo-125M"              # = 0.2936
-    # model_name = "rhysjones/gpt2-124M-edu-fineweb-10B"  # = 0.3099 # Andrej Karpathy model
-
-    file_path = "models/nano-gpt/model_19072.pt"
-
-    config = GPTConfig(
-        block_size=1024,
-        vocab_size=50304,
-        n_layer=12,
-        n_head=12,
-        n_embd=768
-    )
-
-    ckpt = torch.load(file_path, map_location=device, weights_only=False)
-
-    config = ckpt['config']
-
-    model = GPT(**config) if isinstance(config, dict) else GPT(config)
-
-    model.load_state_dict(ckpt['model'])
-    model.to(device)
-    model.eval()
-
-    evaluate_hellaswag(model)
-
-    # test text generated
-
-    tokenizer = GPT2TokenizerFast.from_pretrained(f"data/gpt2", local_files_only=True)
-
-    enc = tokenizer("Transformer", truncation=True, max_length=1024, add_special_tokens=False, return_tensors="pt")
-
-    input_ids = enc["input_ids"]
-
-    attention_mask = enc["attention_mask"]
-
-    gen_ids = model.generate(
-                input_ids=input_ids.to(device),
-                attention_mask=attention_mask.to(device),
-                max_new_tokens=20,
-                do_sample=False,
-                top_k=10,
-                eos_token_id=tokenizer.eos_token_id,
-                pad_token_id=tokenizer.eos_token_id
-            )[0]
-    output_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
-
-    print("Generated text:", output_text)
