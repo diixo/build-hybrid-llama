@@ -1,17 +1,17 @@
 
+import os
 import torch
 from torch.nn import functional as F
-import os, torch
+from transformers import PreTrainedTokenizerBase
 
 
-def generate_text(prompt: str, model, enc, device, device_type, ddp_rank):
+def generate_text(prompt: str, model, tokenizer: PreTrainedTokenizerBase, device, device_type, ddp_rank):
     model.eval()
     num_return_sequences = 1
     max_length = 64
-    tokens = enc.encode(prompt)
-    tokens = torch.tensor(tokens, dtype=torch.long)
-    tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
-    xgen = tokens.to(device)
+    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
+    xgen = encoded["input_ids"].to(device)
+    xgen = xgen.repeat(num_return_sequences, 1)
     sample_rng = torch.Generator(device=device)
     sample_rng.manual_seed(42 + ddp_rank)
 
@@ -38,7 +38,7 @@ def generate_text(prompt: str, model, enc, device, device_type, ddp_rank):
     # print the generated text
     for i in range(num_return_sequences):
         tokens = xgen[i, :max_length].tolist()
-        decoded = enc.decode(tokens)
+        decoded = tokenizer.decode(tokens, skip_special_tokens=False)
         print(f"rank {ddp_rank} sample {i}: {decoded}")
 
 

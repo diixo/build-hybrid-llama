@@ -9,8 +9,6 @@ import torch
 from hellaswag import render_example, iterate_examples, get_most_likely_row
 from model_llama import GPTLlama
 from auto_config import AutoConfigLlama
-from transformers import GPT2TokenizerFast
-import tiktoken
 from dataloader import DataLoaderLite
 from utils import generate_text
 
@@ -64,8 +62,6 @@ if __name__ == "__main__":
 
     # added after video, pytorch can be serious about it's device vs. device_type distinction
     device_type = "cuda" if device.startswith("cuda") else "cpu"
-
-    enc = tiktoken.get_encoding("gpt2")
 
     T = SEQUENCE_LENGTH
     assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
@@ -171,7 +167,7 @@ if __name__ == "__main__":
 
         # once in a while generate from the model (except step 0, which is noise)
         if ((step > 0 and step % eval_steps == 0) or last_step):
-            generate_text("Hello, I'm a language model,", model, enc, device, device_type, ddp_rank)
+            generate_text("Hello, I'm a language model,", model, tokenizer, device, device_type, ddp_rank)
 
         # do one step of the optimization
         model.train()

@@ -190,7 +190,7 @@ for step in range(max_steps):
 
     # once in a while generate from the model (except step 0, which is noise)
     if ((step > 0 and step % 250 == 0) or last_step) and (not use_compile):
-        generate_text("Hello, I'm a language model,", model, enc, device, device_type, ddp_rank)
+        generate_text("Hello, I'm a language model,", model, tokenizer, device, device_type, ddp_rank)
 
     # do one step of the optimization
     model.train()
