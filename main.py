@@ -102,7 +102,8 @@ if __name__ == "__main__":
         master_process=master_process)
 
     # create the log directory we will write checkpoints to and log to
-    log_dir = "log"
+    log_dir = "train_products"
+
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"log.txt")
     with open(log_file, "w") as f: # open for writing to clear the file
