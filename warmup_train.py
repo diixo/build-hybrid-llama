@@ -15,7 +15,7 @@ from datasets import load_dataset # pip install datasets
 import matplotlib.pyplot as plt
 
 
-SAVE_DIRECTORY = "train_products"
+SAVE_DIR = "train_products"
 
 MAX_LEN = 100
 
@@ -139,7 +139,7 @@ class WikipediaTextDataset(IterableDataset):
 
 class Trainer:
 
-    def __init__(self, model, dataset, config):
+    def __init__(self, model, dataset, config, tokenizer):
         self.losses = []
         self.step_losses = []
         self.epoch_dataset_token_counts = []
@@ -147,7 +147,8 @@ class Trainer:
 
         self.model = model.to(config.device).float()
         self.config = config
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
+        self.tokenizer = tokenizer
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=config.learning_rate)
         self.loader = DataLoader(
             dataset,
             batch_size = config.batch_size,
@@ -156,8 +157,8 @@ class Trainer:
                 batch,
                 #max_seq_length = model.config.block_size,
                 max_seq_length = MAX_LEN,
-                pad_token_id = tokenizer.eos_token_id,
-                eos_token_id = tokenizer.eos_token_id,
+                pad_token_id = self.tokenizer.eos_token_id,
+                eos_token_id = self.tokenizer.eos_token_id,
                 device = config.device,
                 ),
             )
@@ -250,11 +251,11 @@ class Trainer:
             self.losses.append(epoch_avg_loss)
             self.epoch_dataset_token_counts.append(total_dataset_tokens)
             self.dataset_tokens_processed += total_dataset_tokens
-            print(f"Epoch {epoch+1}: epoch_avg_loss={epoch_avg_loss:.4f}, PPL={ppl:.4f}, dataset_tokens={total_dataset_tokens:,}")
+            print(f"Epoch {epoch+1}: epoch_avg_loss={epoch_avg_loss:.4f}, PPL={ppl:.4f}, dataset_tokens={total_dataset_tokens:_}")
 
         print(
             "✅ Training completed,",
-            f"steps: {len(self.step_losses)}, final_avg_loss: {self.losses[-1]:.4f}, dataset_tokens_processed={self.dataset_tokens_processed:,}"
+            f"steps: {len(self.step_losses)}, final_avg_loss: {self.losses[-1]:.4f}, dataset_tokens_processed={self.dataset_tokens_processed:_}"
         )
 
         return self.losses, self.step_losses
@@ -274,15 +275,31 @@ def plot_losses(losses1: list, label1: str, x_label: str):
     plt.show()
 
 
-if __name__ == "__main__":
-
+def run_warmup_stage(
+    model,
+    tokenizer,
+    train_config,
+    max_rows=None,
+):
     fw = load_dataset("aitetic/wikipedia", name="20220301.en", split="train")
+
+    dataset = WikipediaTextDataset(fw, tokenizer, max_seq_length=MAX_LEN, max_rows=max_rows)
+    if len(dataset) == 0:
+        return model, [], []
+
+    trainer = Trainer(model, dataset, train_config, tokenizer)
+    epoch_losses, step_losses = trainer.train()
+
+    return trainer.model, epoch_losses, step_losses
+
+
+if __name__ == "__main__":
 
     tokenizer_type = "gpt-noomo-32k"
 
     model: GPTLlama = None
 
-    train_config = TrainerConfig(epochs=1, batch_size=10, grad_accum_steps=1)
+    train_config = TrainerConfig(learning_rate=8e-5, batch_size=10, grad_accum_steps=1)
 
     model, tokenizer = AutoConfigLlama.from_config(size_type="mini", tokenizer_type=tokenizer_type)
 
@@ -290,23 +307,15 @@ if __name__ == "__main__":
     #smoke_rows = SMOKE_ROWS if TRAIN_MODE == "smoke-train" else None
 
     print(f"model.sz={model.get_num_params()}")
-    smoke_rows = None
+    smoke_rows = 1080 #None
 
-    dataset = WikipediaTextDataset(fw, tokenizer, max_seq_length=MAX_LEN, max_rows=smoke_rows)
-    if len(dataset) == 0:
-        raise SystemExit(0)
+    model, epoch_losses, step_losses = run_warmup_stage(
+        model,
+        tokenizer,
+        train_config,
+        max_rows=smoke_rows,
+    )
 
-    trainer = Trainer(model, dataset, train_config)
-
-    epoch_losses, step_losses = trainer.train()
+    #save_trained_model(SAVE_DIR, model, model_type="llama", train_config=train_config, tokenizer_type=tokenizer_type)
 
     plot_losses(step_losses, type(model).__name__, "Steps")
-
-    extra = {"examples_count": len(dataset)}
-
-    save_trained_model(SAVE_DIRECTORY,
-                        model,
-                        model_type="llama",
-                        train_config=train_config,
-                        tokenizer_type=tokenizer_type,
-                        **extra)

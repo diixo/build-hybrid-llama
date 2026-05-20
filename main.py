@@ -11,6 +11,7 @@ from model_llama import GPTLlama
 from auto_config import AutoConfigLlama
 from dataloader import DataLoaderLite
 from utils import generate_text
+from warmup_train import TrainerConfig as WarmupTrainerConfig, run_warmup_stage
 
 torch.manual_seed(1337)
 if torch.cuda.is_available():
@@ -75,6 +76,21 @@ if __name__ == "__main__":
     # create model
     model: GPTLlama = None
     model, tokenizer = AutoConfigLlama.from_config(size_type="mini", tokenizer_type="gpt-noomo-32k")
+
+    warmup_config = WarmupTrainerConfig(
+        epochs=1,
+        batch_size=10,
+        learning_rate=8e-5,
+        device=device,
+    )
+    if master_process:
+        print("starting warmup stage before full pre-train")
+
+    model, warmup_epoch_losses, _ = run_warmup_stage(model, tokenizer, warmup_config)
+
+    if master_process and warmup_epoch_losses:
+        print(f"warmup completed: final_avg_loss={warmup_epoch_losses[-1]:.4f}")
+
     model.to(device)
 
     raw_model = model # always contains the "raw" unwrapped model

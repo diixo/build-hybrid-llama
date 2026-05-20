@@ -3,7 +3,12 @@ https://huggingface.co/datasets/aitetic/wikipedia/tree/main/20220301.en
 Downloads and tokenizes the data and saves data shards to disk.
 Run simply as:
 $ python wikipedia.py
-Will save shards to the local directory "wikipedia-en".
+Will save shards to the local directory "wikipedia".
+
+------------------------------------------
+* Rows: 6_458_670
+* Tokens (GPT2): 4_640_971_626
+* Tokens (gpt-noomo-32k): 4_840_319_672
 """
 
 import os
