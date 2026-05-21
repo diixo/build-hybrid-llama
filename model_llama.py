@@ -4,8 +4,10 @@ GPT-LLaMA model
 2) tie_word_embeddings=True in GPT.from_pretrained to share weights between token embeddings and LM head.
 """
 
+import json
 import math
-import inspect
+import os
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,6 +29,7 @@ class GPTConfig:
     rope_base: float = 10000.0  # standard base (θ). For learning on length=2048 may use 10000.0
     use_rope: bool = True       # whether to use RoPE or not
 
+    attention_bias: bool = True
     mlp_bias: bool = False
 
 
@@ -117,9 +120,9 @@ class CausalSelfAttention(nn.Module):
         self.rope_base = config.rope_base
 
         # key, query, value projections for all heads, but in a batch
-        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd)
+        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.attention_bias)
         # output projection
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd)
+        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.attention_bias)
         self.c_proj.NANOGPT_SCALE_INIT = 1
 
         if self.use_rope:
@@ -281,6 +284,157 @@ class GPTLlama(nn.Module):
 
         # init params
         self.apply(self._init_weights)
+
+
+    @staticmethod
+    def from_pretrained(
+        repo_id_or_path: str,
+        checkpoint_file: str | None = None,
+        config_file: str = "config.json",
+        revision: str | None = None,
+        map_location: str | torch.device = "cpu",
+        local_files_only: bool = False,
+        strict: bool = True,
+        config: GPTConfig | dict | None = None,
+    ):
+        """
+        Load a GPTLlama checkpoint from a local path or a Hugging Face Hub repository.
+
+        Supported checkpoint formats:
+        1) raw state_dict
+        2) dict with keys like {"model": state_dict, "config": {...}}
+        3) separate config.json next to the checkpoint file
+        """
+        source_path = Path(repo_id_or_path)
+
+        if source_path.is_file():
+            checkpoint_path = source_path
+            local_dir = source_path.parent
+        else:
+            if source_path.is_dir():
+                local_dir = source_path
+            else:
+                try:
+                    from huggingface_hub import snapshot_download
+                except ImportError as exc:
+                    raise ImportError(
+                        "huggingface_hub is required to load checkpoints from Hugging Face Hub"
+                    ) from exc
+
+                allow_patterns = [config_file]
+                if checkpoint_file is not None:
+                    allow_patterns.append(checkpoint_file)
+                else:
+                    allow_patterns.extend([
+                        "model*.pt",
+                        "model*.pth",
+                        "model*.bin",
+                        "model.safetensors",
+                        "pytorch_model.bin",
+                    ])
+
+                local_dir = Path(snapshot_download(
+                    repo_id_or_path,
+                    revision=revision,
+                    local_files_only=local_files_only,
+                    allow_patterns=allow_patterns,
+                ))
+
+            if checkpoint_file is not None:
+                checkpoint_path = local_dir / checkpoint_file
+            else:
+                preferred_names = [
+                    "model.pt",
+                    "model.pth",
+                    "pytorch_model.bin",
+                    "model.safetensors",
+                ]
+                checkpoint_path = None
+                for name in preferred_names:
+                    candidate = local_dir / name
+                    if candidate.is_file():
+                        checkpoint_path = candidate
+                        break
+
+                if checkpoint_path is None:
+                    matches = []
+                    for pattern in ("model*.pt", "model*.pth", "model*.bin", "*.safetensors"):
+                        matches.extend(sorted(local_dir.glob(pattern)))
+
+                    if len(matches) == 1:
+                        checkpoint_path = matches[0]
+                    elif len(matches) > 1:
+                        raise ValueError(
+                            "Multiple checkpoint files found. Pass checkpoint_file explicitly: "
+                            + ", ".join(path.name for path in matches)
+                        )
+                    else:
+                        raise FileNotFoundError(f"No checkpoint file found in {local_dir}")
+
+        if not checkpoint_path.is_file():
+            raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+
+        if checkpoint_path.suffix == ".safetensors":
+            try:
+                from safetensors.torch import load_file
+            except ImportError as exc:
+                raise ImportError(
+                    "safetensors is required to load .safetensors checkpoints"
+                ) from exc
+            checkpoint = load_file(str(checkpoint_path), device=str(map_location))
+        else:
+            try:
+                checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+            except TypeError:
+                checkpoint = torch.load(checkpoint_path, map_location=map_location)
+
+        if isinstance(config, GPTConfig):
+            model_config = config
+        else:
+            checkpoint_config = None
+            if isinstance(checkpoint, dict) and "config" in checkpoint:
+                checkpoint_config = checkpoint["config"]
+            else:
+                config_path = local_dir / config_file
+                if config_path.is_file():
+                    with open(config_path, "r", encoding="utf-8") as file_obj:
+                        checkpoint_config = json.load(file_obj)
+
+            if config is not None:
+                checkpoint_config = config
+
+            if checkpoint_config is None:
+                raise ValueError(
+                    "Model config not found. Provide config=..., store it inside the checkpoint, "
+                    f"or add {config_file} next to the weights."
+                )
+
+            if isinstance(checkpoint_config, GPTConfig):
+                model_config = checkpoint_config
+            elif isinstance(checkpoint_config, dict):
+                model_config = GPTConfig(**checkpoint_config)
+            else:
+                model_config = GPTConfig(**vars(checkpoint_config))
+
+        if isinstance(checkpoint, dict) and "model" in checkpoint:
+            state_dict = checkpoint["model"]
+        elif isinstance(checkpoint, dict):
+            state_dict = checkpoint
+        else:
+            raise TypeError(f"Unsupported checkpoint format: {type(checkpoint)!r}")
+
+        cleaned_state_dict = {}
+        for key, value in state_dict.items():
+            clean_key = key
+            for prefix in ("module.", "_orig_mod."):
+                if clean_key.startswith(prefix):
+                    clean_key = clean_key[len(prefix):]
+            cleaned_state_dict[clean_key] = value
+
+        model = GPTLlama(config=model_config)
+        model.load_state_dict(cleaned_state_dict, strict=strict)
+        model.eval()
+        return model
 
 
     def forward(self, idx, targets=None, attention_mask=None):
