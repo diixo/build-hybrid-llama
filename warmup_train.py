@@ -345,6 +345,8 @@ if __name__ == "__main__":
         max_rows=smoke_rows,
     )
 
-    save_trained_model(model, SAVE_DIR, file_name=FILE_NAME, train_config=train_config, tokenizer_type=tokenizer_type)
+    extra_info = {"tokenizer_type": tokenizer_type}
+
+    save_trained_model(model, SAVE_DIR, file_name=FILE_NAME, train_config=train_config, **extra_info)
 
     plot_losses(step_losses, type(model).__name__, "Steps")

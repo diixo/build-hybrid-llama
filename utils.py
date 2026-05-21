@@ -58,7 +58,7 @@ def plot_loss(losses: list, model_type: str):
 
 
 
-def save_trained_model(model, save_directory: str, file_name: str, train_config, tokenizer_type: str, **extra):
+def save_trained_model(model, save_directory: str, file_name: str = "model.pt", train_config: dict = {}, **extra):
 
     os.makedirs(save_directory, exist_ok=True)
 
@@ -66,13 +66,8 @@ def save_trained_model(model, save_directory: str, file_name: str, train_config,
         "model": model.state_dict(),
         "config": (model.config if isinstance(model.config, dict) else getattr(model.config, "__dict__", None)),
         "train_config": (train_config if isinstance(train_config, dict) else getattr(train_config, "__dict__", None)),
-        #"config": model.config,
-        #"train_config": train_config,
-        "tokenizer_type": tokenizer_type,
         "extra": extra,
     }
-    # if optimizer is not None:
-    #     ckpt["optimizer"] = optimizer.state_dict()
 
     checkpoint_path = os.path.join(save_directory, file_name)
     torch.save(ckpt, checkpoint_path)
