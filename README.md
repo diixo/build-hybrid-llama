@@ -13,3 +13,7 @@ B = 16 # micro batch size
 ```
 
 The trained model will be located in `train_products` directory.
+
+
+## GPT-R (GPT-RoPE)
+GPT-R is hybrid the nano-GPT model with RoPE technique.
