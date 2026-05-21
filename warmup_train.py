@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 
 
 SAVE_DIR = "train_products"
-FILE_NAME = "model_llama-warmup.pt"
+FILE_NAME = "model.pt"
 
 MAX_LEN = 100
 
@@ -55,8 +55,8 @@ def custom_collate_fn(batch, max_seq_length, pad_token_id, eos_token_id, device,
 
     dataset_token_count = sum(int(item.numel()) for item in batch)
 
-    # Find the longest sequence in the batch
-    batch_max_length = max(len(item) + 1 for item in batch)
+    # Add EOS only when the sample is shorter than the warmup cap.
+    batch_max_length = max(len(item) + (1 if len(item) < max_seq_length else 0) for item in batch)
 
     # Pad and prepare inputs and targets
     inputs_lst, targets_lst = [], []
@@ -64,7 +64,9 @@ def custom_collate_fn(batch, max_seq_length, pad_token_id, eos_token_id, device,
 
     for item in batch:
 
-        new_item = item.tolist() + [eos_token_id]
+        new_item = item.tolist()
+        if len(item) < max_seq_length:
+            new_item.append(eos_token_id)
         real_len = len(new_item)
 
         # Pad sequences to max_length
@@ -312,7 +314,7 @@ if __name__ == "__main__":
 
 
     print(f"model.sz={model.get_num_params()}")
-    smoke_rows = 480 #None
+    smoke_rows = 600 #None
 
     model, epoch_losses, step_losses = run_warmup_stage(
         model,
