@@ -3,15 +3,15 @@
 #--------------------------------------------------------------------------
 
 import os
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 import time
 import numpy as np
 import torch
 from hellaswag import render_example, iterate_examples, get_most_likely_row
 from model_llama import GPTRForCausalLM
-from auto_config import AutoConfigLlama
 from dataloader import DataLoaderLite
 from utils import generate_text
-from warmup_train import TrainerConfig as WarmupTrainerConfig, run_warmup_stage
+from transformers import GPT2TokenizerFast
 
 torch.manual_seed(1337)
 if torch.cuda.is_available():
@@ -20,8 +20,7 @@ if torch.cuda.is_available():
 
 SEQUENCE_LENGTH = 1024
 
-LEARNING_RATE = 8e-5
-
+LEARNING_RATE = 1e-4
 eval_steps = 250
 
 total_batch_size = 65536 # 2**16, ~65k, in number of tokens, should be divisible by (B * SEQUENCE_LENGTH * ddp_world_size)
@@ -58,27 +57,11 @@ if __name__ == "__main__":
 
     torch.set_float32_matmul_precision('high')
 
-    # create model
-    model: GPTRForCausalLM = None
-    model, tokenizer = AutoConfigLlama.from_config(size_type="mini", tokenizer_type="gpt-noomo-32k")
+    # -----------------------------------------------------------------------------
+    tokenizer = GPT2TokenizerFast.from_pretrained(f"data/gpt-noomo-32k", local_files_only=True)
 
-    #####################################################################################################
-
-    warmup_config = WarmupTrainerConfig(
-        epochs=1,
-        batch_size=10,
-        learning_rate=LEARNING_RATE,
-        device=device,
-    )
-
-    print("starting warmup stage before full pre-train")
-
-    model, warmup_epoch_losses, _ = run_warmup_stage(model, tokenizer, warmup_config)
-
-    if warmup_epoch_losses:
-        print(f"warmup completed: final_avg_loss={warmup_epoch_losses[-1]:.4f}")
-
-    #####################################################################################################
+    model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b-warmup")
+    # -----------------------------------------------------------------------------
 
     model.to(device)
 

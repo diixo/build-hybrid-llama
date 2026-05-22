@@ -1,12 +1,13 @@
 import os
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 import time
 import numpy as np
 import torch
 from hellaswag import render_example, iterate_examples, get_most_likely_row
 from model_llama import GPTRForCausalLM
-from auto_config import AutoConfigLlama
 from dataloader import DataLoaderLite
 from utils import generate_text
+from transformers import GPT2TokenizerFast
 
 
 # run the training loop
@@ -15,6 +16,9 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 
 SEQUENCE_LENGTH = 1024
+
+LEARNING_RATE = 1e-4
+eval_steps = 250
 
 #total_batch_size = 524288 # 2**19, ~0.5M, in number of tokens
 #B = 64 # micro batch size
@@ -57,14 +61,11 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
 
 
-fixed_lr = 1e-4
-eval_steps = 250
-
 # -----------------------------------------------------------------------------
-# create model
-model: GPTRForCausalLM = None
-model, tokenizer = AutoConfigLlama.from_config(size_type="mini", tokenizer_type="gpt-noomo-32k")
+tokenizer = GPT2TokenizerFast.from_pretrained(f"data/gpt-noomo-32k", local_files_only=True)
 
+model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b-warmup")
+# -----------------------------------------------------------------------------
 
 T = SEQUENCE_LENGTH
 assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
@@ -100,7 +101,7 @@ raw_model = model.module if ddp else model # always contains the "raw" unwrapped
 # optimize!
 optimizer = raw_model.configure_optimizers(
     weight_decay=0.1,
-    learning_rate=fixed_lr,
+    learning_rate=LEARNING_RATE,
     device_type=device_type,
     master_process=master_process)
 
@@ -218,7 +219,7 @@ for step in range(max_steps):
     tokens_processed = train_loader.B * train_loader.T * grad_accum_steps * ddp_world_size
     tokens_per_sec = tokens_processed / dt
     if master_process:
-        print(f"step {step:5d} | loss: {loss_accum.item():.6f} | lr: {fixed_lr:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
+        print(f"step {step:5d} | loss: {loss_accum.item():.6f} | lr: {LEARNING_RATE:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
         with open(log_file, "a") as f:
             f.write(f"{step} train {loss_accum.item():.6f}\n")
 
