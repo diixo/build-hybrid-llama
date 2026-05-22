@@ -1,7 +1,7 @@
 
 import json
 from transformers import GPT2TokenizerFast
-from model_llama import GPTLlama
+from model_llama import GPTRForCausalLM
 import torch
 import os
 
@@ -55,7 +55,7 @@ class AutoConfigLlama:
         print(f"config_kwargs =\n{json.dumps(config_kwargs, indent=2)}")
 
         # get the model class
-        model = GPTLlama(**config_kwargs)
+        model = GPTRForCausalLM(**config_kwargs)
 
         return model, tokenizer
 
@@ -74,7 +74,7 @@ class AutoConfigLlama:
         config = ckpt['config']
 
         # get the model class from mapping
-        model_cls = GPTLlama
+        model_cls = GPTRForCausalLM
 
         # create the model instance use mapped class
         model = model_cls(**config) if isinstance(config, dict) else model_cls(config)

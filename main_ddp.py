@@ -3,7 +3,7 @@ import time
 import numpy as np
 import torch
 from hellaswag import render_example, iterate_examples, get_most_likely_row
-from model_llama import GPTLlama
+from model_llama import GPTRForCausalLM
 from auto_config import AutoConfigLlama
 from dataloader import DataLoaderLite
 from utils import generate_text
@@ -62,7 +62,7 @@ eval_steps = 250
 
 # -----------------------------------------------------------------------------
 # create model
-model: GPTLlama = None
+model: GPTRForCausalLM = None
 model, tokenizer = AutoConfigLlama.from_config(size_type="mini", tokenizer_type="gpt-noomo-32k")
 
 

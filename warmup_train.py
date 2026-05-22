@@ -7,7 +7,7 @@ import json
 import os
 import torch, math, random, numpy as np
 from dataclasses import dataclass
-from model_llama import GPTLlama
+from model_llama import GPTRForCausalLM
 from auto_config import AutoConfigLlama
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
@@ -306,7 +306,7 @@ if __name__ == "__main__":
 
     tokenizer_type = "gpt-noomo-32k"
 
-    model: GPTLlama = None
+    model: GPTRForCausalLM = None
 
     train_config = TrainerConfig(learning_rate=LEARNING_RATE, batch_size=8, grad_accum_steps=1)
 

@@ -264,7 +264,7 @@ class GPTOutput:
     loss: Optional[torch.Tensor] = None
 
 
-class GPTLlama(nn.Module):
+class GPTRForCausalLM(nn.Module):
     def __init__(self, config: GPTConfig=None, **kwargs):
         super().__init__()
         if config is None:
@@ -299,7 +299,7 @@ class GPTLlama(nn.Module):
         config: GPTConfig | dict | None = None,
     ):
         """
-        Load a GPTLlama checkpoint from a local path or a Hugging Face Hub repository.
+        Load a GPTRForCausalLM checkpoint from a local path or a Hugging Face Hub repository.
 
         Supported checkpoint formats:
         1) raw state_dict
@@ -432,7 +432,7 @@ class GPTLlama(nn.Module):
                     clean_key = clean_key[len(prefix):]
             cleaned_state_dict[clean_key] = value
 
-        model = GPTLlama(config=model_config)
+        model = GPTRForCausalLM(config=model_config)
         model.load_state_dict(cleaned_state_dict, strict=strict)
         model.eval()
         return model
