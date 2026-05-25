@@ -385,6 +385,9 @@ class GPTRForCausalLM(nn.Module):
 
         self.eval()
         block_size = self.config.block_size
+        model_device = next(self.parameters()).device
+
+        input_ids = input_ids.to(device=model_device, dtype=torch.long)
 
         if pad_token_id is None:
             pad_token_id = eos_token_id if eos_token_id is not None else 0
@@ -392,13 +395,13 @@ class GPTRForCausalLM(nn.Module):
         if attention_mask is not None:
             B, T0 = input_ids.shape
 
-            attention_mask = attention_mask.to(device=input_ids.device, dtype=torch.long)
+            attention_mask = attention_mask.to(device=model_device, dtype=torch.long)
             assert attention_mask.dim() == 2 and attention_mask.size(0) == B, f"bad attention_mask {attention_mask.shape}"
             assert attention_mask.size(1) == input_ids.size(1), f"mask/input mismatch: {attention_mask.size()} vs {input_ids.size()}"
 
 
-        pad = torch.tensor(pad_token_id, device=input_ids.device, dtype=input_ids.dtype)
-        finished = torch.zeros(input_ids.size(0), device=input_ids.device, dtype=torch.bool)
+        pad = torch.tensor(pad_token_id, device=model_device, dtype=input_ids.dtype)
+        finished = torch.zeros(input_ids.size(0), device=model_device, dtype=torch.bool)
 
         for _ in range(max_new_tokens):
             if eos_token_id is not None and torch.all(finished):
