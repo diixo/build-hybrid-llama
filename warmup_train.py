@@ -11,7 +11,7 @@ from auto_config import AutoConfigModel
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 
-from transformers import set_seed
+from transformers import set_seed, GPT2TokenizerFast
 
 from datasets import load_dataset
 
@@ -24,6 +24,8 @@ FILE_NAME = "warmup.pt"
 MAX_LEN = 100
 
 LEARNING_RATE = 8e-5
+
+BATCH_SIZE = 8
 
 
 @dataclass
@@ -303,11 +305,16 @@ def run_warmup_stage(
 
 if __name__ == "__main__":
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"using device: {device}")
+
     tokenizer_type = "gpt-noomo-32k"
 
-    train_config = TrainerConfig(learning_rate=LEARNING_RATE, batch_size=8, grad_accum_steps=1)
+    train_config = TrainerConfig(learning_rate=LEARNING_RATE, batch_size=BATCH_SIZE, grad_accum_steps=1)
 
-    model, tokenizer = AutoConfigModel.from_config(size_type="mini", tokenizer_type=tokenizer_type)
+    tokenizer = GPT2TokenizerFast.from_pretrained(f"data/gpt-noomo-32k", local_files_only=True)
+
+    model = AutoConfigModel.from_pretrained("aitetic/gpt-r-0.3b-base", map_location=device)
 
 
     print(f"model.sz={model.get_num_params()}")
