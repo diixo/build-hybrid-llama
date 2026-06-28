@@ -4,7 +4,6 @@ GPT-LLaMA model
 2) tie_word_embeddings=True in GPT.from_pretrained to share weights between token embeddings and LM head.
 """
 
-import json
 import math
 import os
 import inspect
