@@ -388,6 +388,9 @@ class GPTRForCausalLM(nn.Module):
 
         input_ids = input_ids.to(device=model_device, dtype=torch.long)
 
+        if eos_token_id is not None:
+            eos_token_id = getattr(self.config, "eos_token_id", eos_token_id)
+
         if pad_token_id is None:
             pad_token_id = eos_token_id if eos_token_id is not None else 0
 
