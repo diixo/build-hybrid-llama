@@ -13,19 +13,31 @@ from tqdm import tqdm
 
 from transformers import set_seed, GPT2TokenizerFast
 
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 
 import matplotlib.pyplot as plt
 
 
 SAVE_DIR = "train_products"
-FILE_NAME = "warmup.pt"
+FILE_NAME = "model_trained.pt"
+MODEL_REPO = "aitetic/gpt-r-0.3b"
 
-MAX_LEN = 100
+DATASET_REPO = "bookcorpus/bookcorpus"
+DATASET_CONFIG = None
+DATASET_SPLIT = "train"
+DATASET_READY_DIR = "./bookcorpus_ready/train"
+SAVE_READY_DATASET = True
+TEXT_KEY = "text"
+
+
+MAX_LEN = 50
+BATCH_SIZE = 16
+GRAD_ACCUM_STEPS = 1
+
 
 LEARNING_RATE = 8e-5
-
-BATCH_SIZE = 8
+LENGTH_HIST_BINS = 120
+LENGTH_HIST_FILE = os.path.join(SAVE_DIR, "bookcorpus_token_length_hist.png")
 
 
 @dataclass
@@ -101,7 +113,7 @@ def custom_collate_fn(batch, max_seq_length, pad_token_id, eos_token_id, device,
     return inputs_tensor, targets_tensor, attention_mask, dataset_token_count
 
 
-class WikipediaTextDataset(IterableDataset):
+class TextDataset(IterableDataset):
 
     def __init__(self, hf_dataset, tokenizer, max_seq_length=MAX_LEN, max_rows=None, text_key="text"):
         self.hf_dataset = hf_dataset
@@ -114,7 +126,7 @@ class WikipediaTextDataset(IterableDataset):
         self.total_rows = min(total_rows, max_rows) if max_rows is not None else total_rows
 
         print(
-            f"WikipediaTextDataset::loaded rows.sz={self.total_rows}, max_rows={self.max_rows}, max_seq_length={self.max_seq_length}"
+            f"TextDataset::loaded rows.sz={self.total_rows}, max_rows={self.max_rows}, max_seq_length={self.max_seq_length}"
         )
 
     def __len__(self):
@@ -285,15 +297,84 @@ def plot_losses(losses1: list, label1: str, x_label: str):
     plt.show()
 
 
+def analyze_token_length_distribution(
+    hf_dataset,
+    tokenizer,
+    text_key: str = TEXT_KEY,
+    max_rows: int | None = None,
+    bins: int = LENGTH_HIST_BINS,
+    output_path: str = LENGTH_HIST_FILE,
+):
+    """
+    Compute token length for each record, print summary stats, and save histogram.
+    """
+    if max_rows is not None:
+        rows = hf_dataset.select(range(min(len(hf_dataset), max_rows)))
+    else:
+        rows = hf_dataset
+
+    lengths = []
+    iterator = tqdm(rows, desc="Token length scan")
+
+    for row in iterator:
+        text = row.get(text_key, "")
+        if text is None:
+            text = ""
+        elif not isinstance(text, str):
+            text = str(text)
+
+        input_ids = tokenizer(
+            text,
+            add_special_tokens=False,
+            truncation=False,
+            return_attention_mask=False,
+        )["input_ids"]
+        lengths.append(len(input_ids))
+
+    if not lengths:
+        print("No rows found for token length analysis")
+        return []
+
+    lengths_np = np.asarray(lengths, dtype=np.int32)
+    p50, p90, p95, p99 = np.percentile(lengths_np, [50, 90, 95, 99])
+    over_max_len = float((lengths_np > MAX_LEN).mean()) * 100.0
+
+    print("Token length distribution summary:")
+    print(f"  rows: {len(lengths_np):_}")
+    print(f"  min: {int(lengths_np.min())}")
+    print(f"  mean: {float(lengths_np.mean()):.2f}")
+    print(f"  median (p50): {p50:.2f}")
+    print(f"  p90: {p90:.2f}")
+    print(f"  p95: {p95:.2f}")
+    print(f"  p99: {p99:.2f}")
+    print(f"  max: {int(lengths_np.max())}")
+    print(f"  rows > MAX_LEN({MAX_LEN}): {over_max_len:.2f}%")
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.figure(figsize=(10, 5))
+    plt.hist(lengths_np, bins=bins, color="steelblue", edgecolor="black", alpha=0.85)
+    plt.axvline(MAX_LEN, color="red", linestyle="--", linewidth=1.5, label=f"MAX_LEN={MAX_LEN}")
+    plt.xlabel("Tokens per record")
+    plt.ylabel("Count")
+    plt.title("BookCorpus token length distribution")
+    plt.legend()
+    plt.grid(True, which="both", linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    plt.show()
+
+    print(f"Saved histogram to: {output_path}")
+    return lengths
+
+
 def run_warmup_stage(
     model,
     tokenizer,
     train_config,
+    hf_dataset,
     max_rows=None,
 ):
-    fw = load_dataset("aitetic/wikipedia", name="20220301.en", split="train")
-
-    dataset = WikipediaTextDataset(fw, tokenizer, max_seq_length=MAX_LEN, max_rows=max_rows)
+    dataset = TextDataset(hf_dataset, tokenizer, max_seq_length=MAX_LEN, max_rows=max_rows)
     if len(dataset) == 0:
         return model, [], []
 
@@ -308,26 +389,64 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"using device: {device}")
 
-    tokenizer_type = "gpt-noomo-32k"
+    train_config = TrainerConfig(learning_rate=LEARNING_RATE, batch_size=BATCH_SIZE, grad_accum_steps=GRAD_ACCUM_STEPS, device=device)
 
-    train_config = TrainerConfig(learning_rate=LEARNING_RATE, batch_size=BATCH_SIZE, grad_accum_steps=1)
+    tokenizer = GPT2TokenizerFast.from_pretrained(MODEL_REPO, local_files_only=False)
 
-    tokenizer = GPT2TokenizerFast.from_pretrained(f"data/gpt-noomo-32k", local_files_only=True)
+    model = AutoConfigModel.from_pretrained(
+        MODEL_REPO,
+        map_location=device,
+        local_files_only=True,
+    )
+    if model is None:
+        print(f"local cache miss for {MODEL_REPO}, downloading from Hugging Face Hub...")
+        model = AutoConfigModel.from_pretrained(
+            MODEL_REPO,
+            map_location=device,
+            local_files_only=False,
+        )
+    if model is None:
+        raise SystemExit(f"Checkpoint '{MODEL_REPO}' was not found on Hugging Face Hub or in the local cache.")
 
-    model = AutoConfigModel.from_pretrained("aitetic/gpt-r-0.3b-base", map_location=device)
+    if os.path.isfile(os.path.join(DATASET_READY_DIR, "dataset_info.json")):
+        print(f"Loading prepared dataset from: {DATASET_READY_DIR}")
+        fw = load_from_disk(DATASET_READY_DIR)
+    else:
+        fw = load_dataset(
+            DATASET_REPO,
+            name=DATASET_CONFIG,
+            split=DATASET_SPLIT,
+            trust_remote_code=True,
+        )
+        if SAVE_READY_DATASET:
+            os.makedirs(os.path.dirname(DATASET_READY_DIR), exist_ok=True)
+            fw.save_to_disk(DATASET_READY_DIR)
+            print(f"Saved prepared dataset to: {DATASET_READY_DIR}")
 
+    print(f"dataset: {DATASET_REPO}, split: {DATASET_SPLIT}, config: {DATASET_CONFIG}")
+
+    # print("Building token length distribution before training...")
+    # analyze_token_length_distribution(
+    #     fw,
+    #     tokenizer,
+    #     text_key=TEXT_KEY,
+    #     max_rows=None,
+    #     bins=LENGTH_HIST_BINS,
+    #     output_path=LENGTH_HIST_FILE,
+    # )
 
     print(f"model.sz={model.get_num_params()}")
-    smoke_rows = 600 #None
+    smoke_rows = None
 
     model, epoch_losses, step_losses = run_warmup_stage(
         model,
         tokenizer,
         train_config,
+        fw,
         max_rows=smoke_rows,
     )
 
-    extra_info = {"tokenizer_type": tokenizer_type}
+    extra_info = {"tokenizer_type": MODEL_REPO}
 
     model.save_model(SAVE_DIR, file_name=FILE_NAME, train_config=train_config, **extra_info)
 
