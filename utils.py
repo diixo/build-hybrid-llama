@@ -4,6 +4,50 @@ import torch
 from torch.nn import functional as F
 from transformers import PreTrainedTokenizerBase
 
+from pathlib import Path
+import json
+
+from typing import List, Tuple
+
+
+def read_jsonl(file_path: str | Path) -> Tuple[int, List[Tuple[int, str]]]:
+    """Returns the count of non-empty records in a JSONL file."""
+
+    count = 0
+    errors: List[Tuple[int, str]] = []
+
+    first_five = []
+
+    path = Path(file_path)
+
+    if not path.is_file():
+        raise FileNotFoundError(f"File not found: {path.resolve()}")
+
+    with path.open("r", encoding="utf-8") as file:
+        for line_number, line in enumerate(file, start=1):
+            line = line.strip()
+
+            if not line:
+                continue
+
+            try:
+                record = json.loads(line)
+                count += 1
+
+                if count % 1000 == 0 and count > 0:
+                    print(f"...{count} items...")
+
+                if len(first_five) < 5:
+                    first_five.append(record)
+            except json.JSONDecodeError as error:
+                errors.append((line_number, str(error)))
+
+    if first_five:
+        print("First five records:")
+        for record in first_five:
+            print(json.dumps(record, ensure_ascii=False, indent=2))
+    return count, errors
+
 
 def generate_text(prompt: str, model, tokenizer: PreTrainedTokenizerBase, device, device_type, ddp_rank):
     model.eval()
