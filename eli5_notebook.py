@@ -2,10 +2,13 @@
 # https://github.com/huggingface/notebooks/blob/main/transformers_doc/en/language_modeling.ipynb
 
 
+import os
+
 from datasets import load_dataset
 from transformers import GPT2TokenizerFast
 from transformers import DataCollatorForLanguageModeling
 from transformers import TrainingArguments, Trainer
+from transformers.trainer_utils import get_last_checkpoint
 
 from model_llama import GPTRForCausalLM
 
@@ -18,6 +21,7 @@ def main():
 
     eli5 = load_dataset("dany0407/eli5_category", split="train")
 
+    eli5 = eli5.select(range(1000))
 
     eli5 = eli5.flatten()
 
@@ -71,14 +75,20 @@ def main():
 
     model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b")
 
+    output_dir = "./train_products"
+
     training_args = TrainingArguments(
-        output_dir="train_products",
+        output_dir=output_dir,
         eval_strategy="no",
         learning_rate=8e-5,
         num_train_epochs=1,
         weight_decay=0.0,
+        save_strategy="steps",
+        save_steps=500,
+        save_total_limit=1,
+        save_safetensors=False,
         push_to_hub=False,
-        per_device_train_batch_size = 4,
+        per_device_train_batch_size=4,
     )
 
     trainer = Trainer(
@@ -89,11 +99,34 @@ def main():
         processing_class=tokenizer,
     )
 
-    trainer.train()
+    checkpoint = get_last_checkpoint(training_args.output_dir)
+    if checkpoint is not None:
+        print(f"Resuming training from checkpoint: {checkpoint}")
+        trainer.train(resume_from_checkpoint=checkpoint)
+    else:
+        trainer.train()
 
-    # Save the final model in PyTorch .pt format.
-    # This uses the custom GPTRForCausalLM.save_model() path to avoid safetensors shared-memory issues
-    model.save_model("train_products/pt_model", file_name="model.pt")
+
+    # The Trainer has already saved checkpoint folders automatically during training
+    # in the output_dir according to save_strategy/save_steps.
+    # Those folders include optimizer, scheduler, model weights, and trainer state.
+    print(f"Checkpoint folders are saved automatically to {training_args.output_dir}")
+
+    # Also save the final model weights in PyTorch .pt format.
+    # This is useful if you want a standalone weights file, but it does not replace the Trainer checkpoint.
+    model.save_model(output_dir + "/pt_model", file_name="model.pt")
+
+    # To continue training later from the Trainer checkpoint, keep the output_dir folder intact
+    # and call trainer.train(resume_from_checkpoint=last_checkpoint) on the same or a new Trainer.
+    # For example:
+    #   from transformers.trainer_utils import get_last_checkpoint
+    #   last_checkpoint = get_last_checkpoint(output_dir)
+    #   trainer.train(resume_from_checkpoint=last_checkpoint)
+
+    # To continue training later from the saved checkpoint folder, you can load the model back and create a new Trainer:
+    #   model = GPTRForCausalLM.from_pretrained(output_dir + "/pt_model/model.pt")
+    #   trainer = Trainer(model=model, args=training_args, train_dataset=lm_dataset, data_collator=data_collator, processing_class=tokenizer)
+    #   trainer.train(resume_from_checkpoint=True)
 
 
 if __name__ == "__main__":
