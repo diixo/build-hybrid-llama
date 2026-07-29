@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Optional
 
 
@@ -46,8 +47,17 @@ class GPTConfig:
         with open(json_file_path, "w", encoding="utf-8") as handle:
             handle.write(self.to_json_string())
 
+    def save_pretrained(self, save_directory: str | os.PathLike, **kwargs) -> None:
+        save_directory = Path(save_directory)
+        save_directory.mkdir(parents=True, exist_ok=True)
+        self.to_json_file(str(save_directory / "config.json"))
+
     @classmethod
     def from_dict(cls, config_dict: dict) -> "GPTConfig":
+        if isinstance(config_dict, cls):
+            return config_dict
+        if config_dict is None:
+            return cls()
         return cls(**config_dict)
 
     @classmethod
@@ -55,6 +65,32 @@ class GPTConfig:
         with open(json_file_path, "r", encoding="utf-8") as handle:
             config_dict = json.load(handle)
         return cls.from_dict(config_dict)
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs) -> "GPTConfig":
+        path = Path(pretrained_model_name_or_path)
+        if path.is_dir():
+            config_path = path / "config.json"
+            if config_path.is_file():
+                return cls.from_json_file(str(config_path))
+            raise FileNotFoundError(f"No config.json found in {path}")
+
+        if path.is_file() and path.suffix == ".json":
+            return cls.from_json_file(str(path))
+
+        if path.exists():
+            raise FileNotFoundError(f"Unsupported config path: {path}")
+
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError as exc:
+            raise ImportError("huggingface_hub is required to load config from a remote repository") from exc
+
+        local_dir = Path(snapshot_download(str(pretrained_model_name_or_path), local_files_only=kwargs.get("local_files_only", False), revision=kwargs.get("revision")))
+        config_path = local_dir / "config.json"
+        if not config_path.is_file():
+            raise FileNotFoundError(f"No config.json found in {local_dir}")
+        return cls.from_json_file(str(config_path))
 
 
 class RMSNorm(nn.Module):
@@ -328,12 +364,19 @@ class GPTOutput:
     def to_dict(self) -> dict:
         return {"loss": self.loss, "logits": self.logits}
 
+    def to_tuple(self):
+        return (self.loss, self.logits)
+
 
 class GPTRForCausalLM(nn.Module):
-    def __init__(self, config: GPTConfig=None, **kwargs):
+    config_class = GPTConfig
+
+    def __init__(self, config: GPTConfig | dict | None = None, **kwargs):
         super().__init__()
         if config is None:
             config = GPTConfig(**kwargs)
+        elif isinstance(config, dict):
+            config = GPTConfig.from_dict(config)
 
         self.config = config
 
@@ -351,8 +394,25 @@ class GPTRForCausalLM(nn.Module):
         # init params
         self.apply(self._init_weights)
 
+    def get_input_embeddings(self):
+        return self.transformer.wte
 
-    def forward(self, input_ids, attention_mask=None, labels=None):
+    def set_input_embeddings(self, value):
+        self.transformer.wte = value
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def set_output_embeddings(self, value):
+        self.lm_head = value
+
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, **kwargs):
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+        }
+
+    def forward(self, input_ids, attention_mask=None, labels=None, return_dict: bool = True):
         # input_ids is of shape (B, T)
         B, T = input_ids.size()
         assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
@@ -379,7 +439,10 @@ class GPTRForCausalLM(nn.Module):
                 labels = labels.clone()
                 labels[attention_mask == 0] = -100
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-100)
-        return GPTOutput(logits=logits, loss=loss)
+        output = GPTOutput(logits=logits, loss=loss)
+        if return_dict:
+            return output
+        return output.to_tuple()
 
 
     def _init_weights(self, module):
@@ -520,15 +583,89 @@ class GPTRForCausalLM(nn.Module):
         return input_ids
 
 
-    def save_model(self, save_directory: str, file_name: str = "model.pt", train_config: dict = {}, **extra):
+    def save_pretrained(self, save_directory: str | os.PathLike, file_name: str = "pytorch_model.bin", train_config: dict | None = None, **extra):
+        save_directory = Path(save_directory)
+        save_directory.mkdir(parents=True, exist_ok=True)
 
-        os.makedirs(save_directory, exist_ok=True)
+        self.config.save_pretrained(save_directory)
+        torch.save(self.state_dict(), save_directory / file_name)
+        torch.save(self.state_dict(), save_directory / "model.pt")
 
         ckpt = {
             "model": self.state_dict(),
-            "config": (self.config if isinstance(self.config, dict) else getattr(self.config, "__dict__", None)),
+            "config": (self.config.to_dict() if hasattr(self.config, "to_dict") else getattr(self.config, "__dict__", None)),
             "train_config": (train_config if isinstance(train_config, dict) else getattr(train_config, "__dict__", None)),
             "architecture": type(self).__name__,
             "extra": extra,
         }
-        torch.save(ckpt, os.path.join(save_directory, file_name))
+        torch.save(ckpt, save_directory / "model_checkpoint.pt")
+
+
+    def save_model(self, save_directory: str, file_name: str = "model.pt", train_config: dict = {}, **extra):
+        self.save_pretrained(save_directory, file_name=file_name, train_config=train_config, **extra)
+
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path: str | os.PathLike, config: GPTConfig | dict | None = None, map_location: str | torch.device = "cpu", strict: bool = True, **kwargs):
+        path = Path(pretrained_model_name_or_path)
+        local_dir = None
+
+        if path.is_dir():
+            local_dir = path
+        elif path.is_file():
+            if path.suffix == ".json":
+                local_dir = path.parent
+            else:
+                raise ValueError(f"Unsupported checkpoint file: {path}")
+        else:
+            try:
+                from huggingface_hub import snapshot_download
+            except ImportError as exc:
+                raise ImportError("huggingface_hub is required to load a model from a remote repository") from exc
+            local_dir = Path(snapshot_download(str(pretrained_model_name_or_path), local_files_only=kwargs.get("local_files_only", False), revision=kwargs.get("revision")))
+
+        if local_dir is None:
+            raise FileNotFoundError(f"Model path not found: {pretrained_model_name_or_path}")
+
+        if config is None:
+            config_path = local_dir / "config.json"
+            if config_path.is_file():
+                config = GPTConfig.from_json_file(str(config_path))
+            else:
+                config = None
+
+        if isinstance(config, dict):
+            config = GPTConfig.from_dict(config)
+        elif config is not None and not isinstance(config, GPTConfig):
+            config = GPTConfig.from_dict(vars(config))
+
+        model = cls(config=config)
+
+        checkpoint_path = None
+        for candidate in (local_dir / "pytorch_model.bin", local_dir / "model.pt", local_dir / "model_checkpoint.pt"):
+            if candidate.is_file():
+                checkpoint_path = candidate
+                break
+
+        if checkpoint_path is None:
+            raise FileNotFoundError(f"No checkpoint file found in {local_dir}")
+
+        checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+        if isinstance(checkpoint, dict) and "model" in checkpoint:
+            state_dict = checkpoint["model"]
+        elif isinstance(checkpoint, dict):
+            state_dict = checkpoint
+        else:
+            state_dict = checkpoint
+
+        cleaned_state_dict = {}
+        for key, value in state_dict.items():
+            clean_key = key
+            for prefix in ("module.", "_orig_mod."):
+                if clean_key.startswith(prefix):
+                    clean_key = clean_key[len(prefix):]
+            cleaned_state_dict[clean_key] = value
+
+        model.load_state_dict(cleaned_state_dict, strict=strict)
+        model.eval()
+        return model

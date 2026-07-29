@@ -6,7 +6,7 @@ from datasets import load_dataset
 from transformers import GPT2TokenizerFast
 from transformers import DataCollatorForLanguageModeling
 from transformers import TrainingArguments, Trainer
-from transformers import AutoModelForCausalLM
+
 from model_llama import GPTRForCausalLM
 
 from auto_config import AutoConfigModel
@@ -68,9 +68,8 @@ def main():
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     ##########################################################
-    model : GPTRForCausalLM = None
 
-    model = AutoConfigModel.from_pretrained("aitetic/gpt-r-0.3b")
+    model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b")
 
     training_args = TrainingArguments(
         output_dir="my_awesome_eli5_clm-model",
