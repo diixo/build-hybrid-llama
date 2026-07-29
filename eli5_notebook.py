@@ -12,33 +12,27 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
-    #eli5 = load_dataset("dany0407/eli5_category", split="train[:5000]")
-
     eli5 = load_dataset("dany0407/eli5_category", split="train")
-    eli5 = eli5.select(range(5000))
-
-    eli5 = eli5.train_test_split(test_size=0.1)
 
 
     eli5 = eli5.flatten()
 
-    print(eli5["train"][0])
-
+    print(eli5[0])
 
 
     def preprocess_function(examples):
         return tokenizer([" ".join(x) for x in examples["answers.text"]])
 
 
-
     tokenized_eli5 = eli5.map(
         preprocess_function,
         batched=True,
         num_proc=4,
-        remove_columns=eli5["train"].column_names,
+        remove_columns=eli5.column_names,
+        batch_size=1000,
     )
 
-    block_size = 128
+    block_size = 256
 
 
     def group_texts(examples):
@@ -57,7 +51,12 @@ def main():
         result["labels"] = result["input_ids"].copy()
         return result
 
-    lm_dataset = tokenized_eli5.map(group_texts, batched=True, num_proc=4)
+    lm_dataset = tokenized_eli5.map(
+        group_texts,
+        batched=True,
+        num_proc=4,
+        batch_size=1000,
+    )
 
     exit(0)
     ##########################################################
@@ -65,7 +64,7 @@ def main():
     tokenizer.pad_token = tokenizer.eos_token
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    #############################
+    ##########################################################
 
     model = AutoModelForCausalLM.from_pretrained("gpt2")
 
@@ -73,7 +72,7 @@ def main():
         output_dir="my_awesome_eli5_clm-model",
         eval_strategy="no",
         learning_rate=8e-5,
-        num_train_epochs=args.epoch,
+        num_train_epochs=1,
         weight_decay=0.0,
         push_to_hub=False,
         per_device_train_batch_size = 4,
@@ -82,7 +81,7 @@ def main():
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=lm_dataset["train"],
+        train_dataset=lm_dataset,
         data_collator=data_collator,
         processing_class=tokenizer,
     )
