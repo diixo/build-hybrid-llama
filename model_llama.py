@@ -4,13 +4,14 @@ GPT-LLaMA model
 2) tie_word_embeddings=True in GPT.from_pretrained to share weights between token embeddings and LM head.
 """
 
+import json
 import math
 import os
 import inspect
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 
@@ -24,12 +25,36 @@ class GPTConfig:
     flash_attn: bool = True # whether to use flash attention (scaled_dot_product_attention)
     model_type: str = ""    # model type
 
+    eos_token_id: Optional[int] = None  # id of end-of-sequence token
+    bos_token_id: Optional[int] = None  # id of end-of-sequence token
+    pad_token_id: Optional[int] = None  # id of end-of-sequence token
+
     # RoPE params:
     rope_base: float = 10000.0  # standard base (θ). For learning on length=2048 may use 10000.0
     use_rope: bool = True       # whether to use RoPE or not
 
     attention_bias: bool = True
     mlp_bias: bool = False
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def to_json_string(self) -> str:
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True)
+
+    def to_json_file(self, json_file_path: str) -> None:
+        with open(json_file_path, "w", encoding="utf-8") as handle:
+            handle.write(self.to_json_string())
+
+    @classmethod
+    def from_dict(cls, config_dict: dict) -> "GPTConfig":
+        return cls(**config_dict)
+
+    @classmethod
+    def from_json_file(cls, json_file_path: str) -> "GPTConfig":
+        with open(json_file_path, "r", encoding="utf-8") as handle:
+            config_dict = json.load(handle)
+        return cls.from_dict(config_dict)
 
 
 class RMSNorm(nn.Module):
@@ -261,6 +286,48 @@ class GPTOutput:
     logits: torch.Tensor
     loss: Optional[torch.Tensor] = None
 
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            if item == "loss":
+                return self.loss
+            if item == "logits":
+                return self.logits
+            raise KeyError(item)
+        if isinstance(item, int):
+            if item == 0:
+                return self.loss
+            if item == 1:
+                return self.logits
+            raise IndexError(item)
+        if isinstance(item, slice):
+            return tuple(self)[item]
+        raise TypeError(f"Unsupported key type: {type(item)!r}")
+
+    def __iter__(self):
+        yield self.loss
+        yield self.logits
+
+    def __len__(self):
+        return 2
+
+    def keys(self):
+        return ("loss", "logits")
+
+    def values(self):
+        return (self.loss, self.logits)
+
+    def items(self):
+        return tuple((key, getattr(self, key)) for key in self.keys())
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except (KeyError, IndexError, TypeError):
+            return default
+
+    def to_dict(self) -> dict:
+        return {"loss": self.loss, "logits": self.logits}
+
 
 class GPTRForCausalLM(nn.Module):
     def __init__(self, config: GPTConfig=None, **kwargs):
@@ -285,17 +352,17 @@ class GPTRForCausalLM(nn.Module):
         self.apply(self._init_weights)
 
 
-    def forward(self, idx, targets=None, attention_mask=None):
-        # idx is of shape (B, T)
-        B, T = idx.size()
+    def forward(self, input_ids, attention_mask=None, labels=None):
+        # input_ids is of shape (B, T)
+        B, T = input_ids.size()
         assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
 
-        tok_emb = self.transformer.wte(idx) # token embeddings of shape (B, T, n_embd)
+        tok_emb = self.transformer.wte(input_ids) # token embeddings of shape (B, T, n_embd)
         if self.config.use_rope:
             x = tok_emb
         else:
             # forward the token and posisition embeddings
-            pos = torch.arange(0, T, dtype=torch.long, device=idx.device) # shape (T)
+            pos = torch.arange(0, T, dtype=torch.long, device=input_ids.device) # shape (T)
             pos_emb = self.transformer.wpe(pos) # position embeddings of shape (T, n_embd)
             x = tok_emb + pos_emb
 
@@ -306,12 +373,12 @@ class GPTRForCausalLM(nn.Module):
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x) # (B, T, vocab_size)
         loss = None
-        if targets is not None:
+        if labels is not None:
             if attention_mask is not None:
                 # do not calculate paddings in loss
-                targets = targets.clone()
-                targets[attention_mask == 0] = -100
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-100)
+                labels = labels.clone()
+                labels[attention_mask == 0] = -100
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-100)
         return GPTOutput(logits=logits, loss=loss)
 
 

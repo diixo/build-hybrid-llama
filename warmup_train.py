@@ -212,7 +212,7 @@ class Trainer:
                 total_dataset_tokens += int(dataset_token_count)
 
                 # Forward pass
-                raw_loss = self.model(input_ids, labels).loss
+                raw_loss = self.model(input_ids=input_ids, labels=labels).loss
 
                 # ---- logging helpers ----
                 raw = float(raw_loss.detach().cpu().item())

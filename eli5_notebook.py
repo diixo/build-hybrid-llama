@@ -3,21 +3,25 @@
 
 
 from datasets import load_dataset
-from transformers import AutoTokenizer
+from transformers import GPT2TokenizerFast
 from transformers import DataCollatorForLanguageModeling
-from transformers import AutoModelForCausalLM, TrainingArguments, Trainer
+from transformers import TrainingArguments, Trainer
+from transformers import AutoModelForCausalLM
+from model_llama import GPTRForCausalLM
+
+from auto_config import AutoConfigModel
 
 
 def main():
 
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer = GPT2TokenizerFast.from_pretrained("aitetic/gpt-r-0.3b")
 
     eli5 = load_dataset("dany0407/eli5_category", split="train")
 
 
     eli5 = eli5.flatten()
 
-    print(eli5[0])
+    #print(eli5[0])
 
 
     def preprocess_function(examples):
@@ -58,15 +62,15 @@ def main():
         batch_size=1000,
     )
 
-    exit(0)
     ##########################################################
 
     tokenizer.pad_token = tokenizer.eos_token
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     ##########################################################
+    model : GPTRForCausalLM = None
 
-    model = AutoModelForCausalLM.from_pretrained("gpt2")
+    model = AutoConfigModel.from_pretrained("aitetic/gpt-r-0.3b")
 
     training_args = TrainingArguments(
         output_dir="my_awesome_eli5_clm-model",
@@ -86,7 +90,7 @@ def main():
         processing_class=tokenizer,
     )
 
-    #trainer.train()
+    trainer.train()
 
 
 if __name__ == "__main__":

@@ -58,7 +58,16 @@ class AutoConfigModel:
             tokenizer.pad_token = tokenizer.eos_token
         print("EOS token string:", repr(tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)))
 
-        config_kwargs = dict(vocab_size=vocab_sz, rope_base=10000.0, use_rope=True, model_type=size_type)
+        # include special token ids from tokenizer so model config is aware of them
+        config_kwargs = dict(
+            vocab_size=vocab_sz,
+            rope_base=10000.0,
+            use_rope=True,
+            model_type=size_type,
+            eos_token_id=tokenizer.eos_token_id,
+            bos_token_id=getattr(tokenizer, "bos_token_id", None),
+            pad_token_id=getattr(tokenizer, "pad_token_id", None),
+        )
 
         config_kwargs.update(AutoConfigModel.SIZE_MAP[size_type])
 
