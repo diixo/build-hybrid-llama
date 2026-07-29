@@ -16,6 +16,8 @@ env.bak/
 log/
 log.txt
 
+events.out.tfevents.*
+
 
 models/
 datasets/

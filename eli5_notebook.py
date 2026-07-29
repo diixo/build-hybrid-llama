@@ -72,7 +72,7 @@ def main():
     model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b")
 
     training_args = TrainingArguments(
-        output_dir="my_awesome_eli5_clm-model",
+        output_dir="train_products",
         eval_strategy="no",
         learning_rate=8e-5,
         num_train_epochs=1,
@@ -90,6 +90,10 @@ def main():
     )
 
     trainer.train()
+
+    # Save the final model in PyTorch .pt format.
+    # This uses the custom GPTRForCausalLM.save_model() path to avoid safetensors shared-memory issues
+    model.save_model("train_products/pt_model", file_name="model.pt")
 
 
 if __name__ == "__main__":

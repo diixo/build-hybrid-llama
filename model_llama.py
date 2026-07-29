@@ -27,8 +27,8 @@ class GPTConfig:
     model_type: str = ""    # model type
 
     eos_token_id: Optional[int] = None  # id of end-of-sequence token
-    bos_token_id: Optional[int] = None  # id of end-of-sequence token
-    pad_token_id: Optional[int] = None  # id of end-of-sequence token
+    bos_token_id: Optional[int] = None  # id of beginning-of-sequence token
+    pad_token_id: Optional[int] = None  # id of padding token
 
     # RoPE params:
     rope_base: float = 10000.0  # standard base (θ). For learning on length=2048 may use 10000.0
@@ -389,7 +389,7 @@ class GPTRForCausalLM(nn.Module):
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         # weight sharing scheme (tie_word_embeddings=True always)
-        self.transformer.wte.weight = self.lm_head.weight
+        self.tie_weights()
 
         # init params
         self.apply(self._init_weights)
@@ -405,6 +405,18 @@ class GPTRForCausalLM(nn.Module):
 
     def set_output_embeddings(self, value):
         self.lm_head = value
+
+    def tie_weights(self):
+        self.transformer.wte.weight = self.lm_head.weight
+
+    def state_dict(self, destination=None, prefix='', keep_vars=False):
+        state = super().state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
+        wte_key = prefix + 'transformer.wte.weight'
+        head_key = prefix + 'lm_head.weight'
+        if wte_key in state and head_key in state:
+            if state[wte_key].data_ptr() == state[head_key].data_ptr():
+                state[head_key] = state[head_key].clone()
+        return state
 
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, **kwargs):
         return {
@@ -609,14 +621,13 @@ class GPTRForCausalLM(nn.Module):
     def from_pretrained(cls, pretrained_model_name_or_path: str | os.PathLike, config: GPTConfig | dict | None = None, map_location: str | torch.device = "cpu", strict: bool = True, **kwargs):
         path = Path(pretrained_model_name_or_path)
         local_dir = None
+        checkpoint_path = None
 
         if path.is_dir():
             local_dir = path
         elif path.is_file():
-            if path.suffix == ".json":
-                local_dir = path.parent
-            else:
-                raise ValueError(f"Unsupported checkpoint file: {path}")
+            checkpoint_path = path
+            local_dir = path.parent
         else:
             try:
                 from huggingface_hub import snapshot_download
@@ -627,30 +638,56 @@ class GPTRForCausalLM(nn.Module):
         if local_dir is None:
             raise FileNotFoundError(f"Model path not found: {pretrained_model_name_or_path}")
 
+        # if the user passed config, prefer it; otherwise try to load config from a local config.json if present
         if config is None:
             config_path = local_dir / "config.json"
             if config_path.is_file():
                 config = GPTConfig.from_json_file(str(config_path))
-            else:
-                config = None
 
         if isinstance(config, dict):
             config = GPTConfig.from_dict(config)
         elif config is not None and not isinstance(config, GPTConfig):
             config = GPTConfig.from_dict(vars(config))
 
-        model = cls(config=config)
-
-        checkpoint_path = None
-        for candidate in (local_dir / "pytorch_model.bin", local_dir / "model.pt", local_dir / "model_checkpoint.pt"):
-            if candidate.is_file():
-                checkpoint_path = candidate
-                break
+        # search checkpoint files if the user did not provide a direct file path
+        if checkpoint_path is None:
+            for candidate in (local_dir / "pytorch_model.bin", local_dir / "model.pt", local_dir / "model_checkpoint.pt"):
+                if candidate.is_file():
+                    checkpoint_path = candidate
+                    break
 
         if checkpoint_path is None:
             raise FileNotFoundError(f"No checkpoint file found in {local_dir}")
 
-        checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+        if checkpoint_path.suffix == ".safetensors":
+            try:
+                from safetensors.torch import load_file
+            except ImportError as exc:
+                raise ImportError("safetensors is required to load .safetensors checkpoints") from exc
+            checkpoint = load_file(str(checkpoint_path), device=str(map_location))
+        else:
+            try:
+                checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+            except TypeError:
+                checkpoint = torch.load(checkpoint_path, map_location=map_location)
+
+        checkpoint_config = None
+        if isinstance(checkpoint, dict) and "config" in checkpoint:
+            checkpoint_config = checkpoint["config"]
+
+        if config is None and checkpoint_config is not None:
+            if isinstance(checkpoint_config, GPTConfig):
+                config = checkpoint_config
+            elif isinstance(checkpoint_config, dict):
+                config = GPTConfig.from_dict(checkpoint_config)
+            else:
+                config = GPTConfig.from_dict(vars(checkpoint_config))
+
+        if config is None:
+            config = GPTConfig()
+
+        model = cls(config=config)
+
         if isinstance(checkpoint, dict) and "model" in checkpoint:
             state_dict = checkpoint["model"]
         elif isinstance(checkpoint, dict):
