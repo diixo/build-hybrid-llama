@@ -17,7 +17,8 @@ log/
 log.txt
 
 events.out.tfevents.*
-
+.hf_cache/
+dataset.jsonl
 
 models/
 datasets/

@@ -1,12 +1,39 @@
 import json
-from datasets import load_dataset
+import os
+import time
+
+from datasets import DownloadConfig, load_dataset
 
 
 OUTPUT_FILE = "dataset.jsonl"
 
 
+def load_hf_dataset(dataset_name, split="train"):
+    cache_dir = os.path.join(os.getcwd(), ".hf_cache", dataset_name.replace("/", "__"))
+    os.makedirs(cache_dir, exist_ok=True)
+
+    for attempt in range(3):
+        try:
+            return load_dataset(
+                dataset_name,
+                split=split,
+                cache_dir=cache_dir,
+                download_config=DownloadConfig(
+                    max_retries=5,
+                    resume_download=True,
+                    disable_tqdm=False,
+                ),
+                download_mode="reuse_cache_if_exists",
+            )
+        except Exception as exc:
+            if attempt == 2:
+                raise
+            print(f"[dataset_assembler] failed to load {dataset_name} on attempt {attempt + 1}: {exc}")
+            time.sleep(10)
+
+
 def iter_reddit():
-    ds = load_dataset("aitetic/reddit-17", split="train")
+    ds = load_hf_dataset("aitetic/reddit-17", split="train")
 
     for row in ds:
         text = row.get("content", "")
@@ -18,7 +45,7 @@ def iter_reddit():
 
 
 def iter_eli5():
-    ds = load_dataset("aitetic/eli5-lfqa", split="train")
+    ds = load_hf_dataset("aitetic/eli5-lfqa", split="train")
     ds = ds.flatten()   # answers.text -> обычное поле
 
     for row in ds:
@@ -50,11 +77,19 @@ def main():
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             count += 1
 
+            if count % 1000 == 0:
+                print(f"...{count:,} records from: reddit-17")
+
+        f.flush()
+
         for record in iter_eli5():
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             count += 1
 
-    print(f"Done. Wrote {count:,} records to {OUTPUT_FILE}")
+            if count % 1000 == 0:
+                print(f"...{count:,} records from: eli5-lfqa")
+
+    print(f"Done. Wrote {count:,} records to: {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
