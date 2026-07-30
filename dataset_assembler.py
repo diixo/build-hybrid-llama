@@ -32,21 +32,7 @@ def load_hf_dataset(dataset_name, split="train"):
             time.sleep(10)
 
 
-def iter_reddit():
-    ds = load_hf_dataset("aitetic/reddit-17", split="train")
-
-    for row in ds:
-        text = row.get("content", "")
-        if text:
-            yield {
-                "src": "reddit-17",
-                "text": text.strip()
-            }
-
-
-def iter_eli5():
-    ds = load_hf_dataset("aitetic/eli5-lfqa", split="train")
-    ds = ds.flatten()   # answers.text -> обычное поле
+def iter_eli5(ds):
 
     for row in ds:
         question = (row.get("question") or "").strip()
@@ -63,31 +49,55 @@ def iter_eli5():
                 parts.append(ans)
 
         yield {
-            "src": "eli5-lfqa",
+            "src": "qa",
+            "text": "\n".join(parts)
+        }
+
+
+def iter_eli5_ctxs(ds):
+
+    for row in ds:
+        ctxs = row.get("ctxs", [])
+        parts = []
+
+        for ctx in ctxs:
+            ctx = ctx.strip()
+            if ctx:
+                parts.append(ctx)
+
+        yield {
+            "src": "ctxs",
             "text": "\n".join(parts)
         }
 
 
 def main():
+
+    ds = load_hf_dataset("aitetic/eli5-lfqa", split="train")
+
+    ds = ds.flatten()
+
     count = 0
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
 
-        for record in iter_reddit():
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            count += 1
-
-            if count % 1000 == 0:
-                print(f"...{count:,} records from: reddit-17")
-
-        f.flush()
-
-        for record in iter_eli5():
+        for record in iter_eli5_ctxs(ds):
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             count += 1
 
             if count % 1000 == 0:
                 print(f"...{count:,} records from: eli5-lfqa")
+
+        f.flush()
+
+        for record in iter_eli5(ds):
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            count += 1
+
+            if count % 1000 == 0:
+                print(f"...{count:,} records from: eli5-lfqa")
+
+        f.flush()
 
     print(f"Done. Wrote {count:,} records to: {OUTPUT_FILE}")
 
