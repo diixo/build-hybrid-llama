@@ -100,9 +100,9 @@ def main():
         learning_rate=8e-5,
         num_train_epochs=1,
         weight_decay=0.0,
-        save_strategy="steps",
-        save_steps=500,
-        save_total_limit=1,
+        save_strategy="epoch",
+        #save_steps=500,
+        #save_total_limit=1,
         save_safetensors=False,
         push_to_hub=False,
         per_device_train_batch_size=4,
@@ -116,12 +116,12 @@ def main():
         processing_class=tokenizer,
     )
 
-    checkpoint = get_last_checkpoint(training_args.output_dir)
-    if checkpoint is not None:
-        print(f"Resuming training from checkpoint: {checkpoint}")
-        trainer.train(resume_from_checkpoint=checkpoint)
-    else:
-        trainer.train()
+    # checkpoint = get_last_checkpoint(training_args.output_dir)
+    # if checkpoint is not None:
+    #     print(f"Resuming training from checkpoint: {checkpoint}")
+    #     trainer.train(resume_from_checkpoint=checkpoint)
+    # else:
+    #     trainer.train()
 
 
     # The Trainer has already saved checkpoint folders automatically during training
@@ -131,7 +131,8 @@ def main():
 
     # Also save the final model weights in PyTorch .pt format.
     # This is useful if you want a standalone weights file, but it does not replace the Trainer checkpoint.
-    model.save_model(output_dir + "/pt_model", file_name="model.pt")
+    # Pass training metadata via train_config to keep hyperparameters with the saved model.
+    model.save_model(output_dir + "/pt_model", train_config=training_args.to_dict())
 
     # To continue training later from the Trainer checkpoint, keep the output_dir folder intact
     # and call trainer.train(resume_from_checkpoint=last_checkpoint) on the same or a new Trainer.

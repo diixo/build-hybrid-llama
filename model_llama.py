@@ -600,20 +600,30 @@ class GPTRForCausalLM(nn.Module):
         save_directory.mkdir(parents=True, exist_ok=True)
 
         self.config.save_pretrained(save_directory)
-        torch.save(self.state_dict(), save_directory / file_name)
-        torch.save(self.state_dict(), save_directory / "model.pt")
+        state_dict = self.state_dict()
 
+        # Always save the user-requested file_name (could be custom)
+        torch.save(state_dict, save_directory / file_name)
+
+        # Also save a canonical checkpoint file under the standard name "model.pt"
+        # so downstream loaders that expect model.pt (AutoConfigModel, external tools)
+        # will always find a checkpoint with metadata. If the user provided file_name
+        # == "model.pt", the second save will overwrite the first one (but the ckpt
+        # contains the state dict inside), which is acceptable because ckpt includes
+        # the model weights plus metadata.
         ckpt = {
-            "model": self.state_dict(),
+            "model": state_dict,
             "config": (self.config.to_dict() if hasattr(self.config, "to_dict") else getattr(self.config, "__dict__", None)),
             "train_config": (train_config if isinstance(train_config, dict) else getattr(train_config, "__dict__", None)),
             "architecture": type(self).__name__,
             "extra": extra,
         }
-        torch.save(ckpt, save_directory / "model_checkpoint.pt")
+        torch.save(ckpt, save_directory / "model.pt")
 
 
-    def save_model(self, save_directory: str, file_name: str = "model.pt", train_config: dict = {}, **extra):
+    def save_model(self, save_directory: str, file_name: str = "model.pt", train_config: dict | None = None, **extra):
+        if train_config is None:
+            train_config = {}
         self.save_pretrained(save_directory, file_name=file_name, train_config=train_config, **extra)
 
 
