@@ -36,7 +36,7 @@ def iter_eli5(ds):
 
     for row in ds:
         question = (row.get("question") or "").strip()
-        answers = row.get("answers.text", [])
+        answers = row.get("answers", [])
 
         if not question:
             continue
