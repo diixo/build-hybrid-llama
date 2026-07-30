@@ -116,12 +116,12 @@ def main():
         processing_class=tokenizer,
     )
 
-    # checkpoint = get_last_checkpoint(training_args.output_dir)
-    # if checkpoint is not None:
-    #     print(f"Resuming training from checkpoint: {checkpoint}")
-    #     trainer.train(resume_from_checkpoint=checkpoint)
-    # else:
-    #     trainer.train()
+    checkpoint = get_last_checkpoint(training_args.output_dir)
+    if checkpoint is not None:
+        print(f"Resuming training from checkpoint: {checkpoint}")
+        trainer.train(resume_from_checkpoint=checkpoint)
+    else:
+        trainer.train()
 
 
     # The Trainer has already saved checkpoint folders automatically during training
