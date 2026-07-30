@@ -1,5 +1,7 @@
 
 # https://github.com/huggingface/notebooks/blob/main/transformers_doc/en/language_modeling.ipynb
+# the same:
+# https://github.com/diixo/notebooks/blob/main/transformers_doc/en/language_modeling.ipynb
 
 import os
 
