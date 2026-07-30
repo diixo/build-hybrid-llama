@@ -43,7 +43,17 @@ def main():
 
     tokenizer = GPT2TokenizerFast.from_pretrained("aitetic/gpt-r-0.3b")
 
-    model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cuda":
+        print("GPU available for training:", torch.cuda.device_count(), "device(s)")
+        try:
+            print("Current CUDA device:", torch.cuda.current_device(), torch.cuda.get_device_name(torch.cuda.current_device()))
+        except Exception:
+            pass
+    else:
+        print("CUDA not available, training will run on CPU.")
+
+    model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b", map_location=device)
 
     ###################################################################
 
@@ -106,12 +116,15 @@ def main():
         processing_class=tokenizer,
     )
 
-    checkpoint = get_last_checkpoint(training_args.output_dir)
-    if checkpoint is not None:
-        print(f"Resuming training from checkpoint: {checkpoint}")
-        trainer.train(resume_from_checkpoint=checkpoint)
-    else:
-        trainer.train()
+    print("Trainer device:", trainer.args.device)
+    print("Model first parameter device:", next(trainer.model.parameters()).device)
+
+    # checkpoint = get_last_checkpoint(training_args.output_dir)
+    # if checkpoint is not None:
+    #     print(f"Resuming training from checkpoint: {checkpoint}")
+    #     trainer.train(resume_from_checkpoint=checkpoint)
+    # else:
+    #     trainer.train()
 
 
     # The Trainer has already saved checkpoint folders automatically during training
