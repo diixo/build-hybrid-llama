@@ -47,7 +47,11 @@ def main():
 
     ###################################################################
 
-    eli5 = load_dataset("aitetic/eli5-lfqa-combined", split="train")
+    #sym:cache_dir — use project-local Hugging Face cache directory for datasets
+    cache_dir = os.path.abspath("./.hf_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    eli5 = load_dataset("aitetic/eli5-lfqa-combined", split="train", cache_dir=cache_dir)
 
     # The local JSON has one field 'text' per record. Tokenize directly from that field.
     def preprocess_function(examples):
