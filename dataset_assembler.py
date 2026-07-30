@@ -89,6 +89,7 @@ def main():
                 print(f"...{count:,} records: ctxs")
 
         f.flush()
+        print(f"ctxs: done={count:,}")
 
         for record in iter_eli5(ds):
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -98,8 +99,9 @@ def main():
                 print(f"...{count:,} records: qa")
 
         f.flush()
+        print(f"qa: done={count:,}")
 
-    print(f"Done. Wrote {count:,} records to: {OUTPUT_FILE}")
+    print(f"Done. Wrote {count:,} records to: {OUTPUT_FILE}. Input.sz={len(ds):,}")
 
 
 if __name__ == "__main__":
