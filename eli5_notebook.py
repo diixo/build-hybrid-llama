@@ -1,9 +1,9 @@
 
 # https://github.com/huggingface/notebooks/blob/main/transformers_doc/en/language_modeling.ipynb
 
-
 import os
 
+import torch
 from datasets import load_dataset
 from transformers import GPT2TokenizerFast
 from transformers import DataCollatorForLanguageModeling
@@ -12,12 +12,49 @@ from transformers.trainer_utils import get_last_checkpoint
 
 from model_llama import GPTRForCausalLM
 
-from auto_config import AutoConfigModel
+block_size = 256
+
+
+def group_texts(examples):
+    # Concatenate all texts.
+    concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
+    total_length = len(concatenated_examples[list(examples.keys())[0]])
+    # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
+    # customize this part to your needs.
+    if total_length >= block_size:
+        total_length = (total_length // block_size) * block_size
+    # Split by chunks of block_size.
+    result = {
+        k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+        for k, t in concatenated_examples.items()
+    }
+    result["labels"] = result["input_ids"].copy()
+    return result
 
 
 def main():
 
     tokenizer = GPT2TokenizerFast.from_pretrained("aitetic/gpt-r-0.3b")
+
+    model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b")
+
+    # Simple text generation example after loading the model and tokenizer
+    model.eval()
+    prompt = "The future of AI is"
+    inputs = tokenizer(prompt, return_tensors="pt")
+    generated_ids = model.generate(
+        inputs["input_ids"],
+        attention_mask=inputs.get("attention_mask"),
+        max_new_tokens=50,
+        do_sample=False,
+        eos_token_id=tokenizer.eos_token_id,
+    )
+    print("\n=== Generation example ===")
+    print("Prompt:", prompt)
+    print("Generated:", tokenizer.decode(generated_ids[0], skip_special_tokens=True))
+    print("=== End generation ===\n")
+
+    ###################################################################
 
     eli5 = load_dataset("dany0407/eli5_category", split="train")
 
@@ -40,24 +77,6 @@ def main():
         batch_size=1000,
     )
 
-    block_size = 256
-
-
-    def group_texts(examples):
-        # Concatenate all texts.
-        concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
-        total_length = len(concatenated_examples[list(examples.keys())[0]])
-        # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
-        # customize this part to your needs.
-        if total_length >= block_size:
-            total_length = (total_length // block_size) * block_size
-        # Split by chunks of block_size.
-        result = {
-            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-            for k, t in concatenated_examples.items()
-        }
-        result["labels"] = result["input_ids"].copy()
-        return result
 
     lm_dataset = tokenized_eli5.map(
         group_texts,
@@ -72,8 +91,6 @@ def main():
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     ##########################################################
-
-    model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b")
 
     output_dir = "./train_products"
 
