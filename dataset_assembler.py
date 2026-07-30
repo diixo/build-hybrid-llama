@@ -86,7 +86,7 @@ def main():
             count += 1
 
             if count % 1000 == 0:
-                print(f"...{count:,} records from: eli5-lfqa")
+                print(f"...{count:,} records: ctxs")
 
         f.flush()
 
@@ -95,7 +95,7 @@ def main():
             count += 1
 
             if count % 1000 == 0:
-                print(f"...{count:,} records from: eli5-lfqa")
+                print(f"...{count:,} records: qa")
 
         f.flush()
 
