@@ -55,9 +55,7 @@ def main():
         return ds
 
 
-    eli5 = load_local_json_dataset("./datasets/dataset.jsonl")
-    # keep a small subset for quick runs
-    # eli5 = eli5.select(range(1000))
+    eli5 = load_local_json_dataset("dataset.jsonl")
 
     # The local JSON has one field 'text' per record. Tokenize directly from that field.
     def preprocess_function(examples):
