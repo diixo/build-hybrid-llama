@@ -61,7 +61,7 @@ def main():
     cache_dir = os.path.abspath("./.hf_cache")
     os.makedirs(cache_dir, exist_ok=True)
 
-    eli5 = load_dataset("aitetic/eli5-lfqa-combined", split="train", cache_dir=cache_dir)
+    eli5 = load_dataset("aitetic/eli5-lfqa-combined", split="train")
 
     # The local JSON has one field 'text' per record. Tokenize directly from that field.
     def preprocess_function(examples):
@@ -116,15 +116,12 @@ def main():
         processing_class=tokenizer,
     )
 
-    print("Trainer device:", trainer.args.device)
-    print("Model first parameter device:", next(trainer.model.parameters()).device)
-
-    # checkpoint = get_last_checkpoint(training_args.output_dir)
-    # if checkpoint is not None:
-    #     print(f"Resuming training from checkpoint: {checkpoint}")
-    #     trainer.train(resume_from_checkpoint=checkpoint)
-    # else:
-    #     trainer.train()
+    checkpoint = get_last_checkpoint(training_args.output_dir)
+    if checkpoint is not None:
+        print(f"Resuming training from checkpoint: {checkpoint}")
+        trainer.train(resume_from_checkpoint=checkpoint)
+    else:
+        trainer.train()
 
 
     # The Trainer has already saved checkpoint folders automatically during training

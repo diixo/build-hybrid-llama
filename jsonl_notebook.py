@@ -43,7 +43,17 @@ def main():
 
     tokenizer = GPT2TokenizerFast.from_pretrained("aitetic/gpt-r-0.3b")
 
-    model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cuda":
+        print("GPU available for training:", torch.cuda.device_count(), "device(s)")
+        try:
+            print("Current CUDA device:", torch.cuda.current_device(), torch.cuda.get_device_name(torch.cuda.current_device()))
+        except Exception:
+            pass
+    else:
+        print("CUDA not available, training will run on CPU.")
+
+    model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b", map_location=device)
 
     ###################################################################
 
