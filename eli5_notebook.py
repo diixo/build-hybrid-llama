@@ -100,9 +100,11 @@ def main():
         learning_rate=8e-5,
         num_train_epochs=EPOCHS,
         weight_decay=0.0,
-        save_strategy="epoch",
-        #save_steps=500,
-        #save_total_limit=1,
+        save_total_limit=1,
+
+        save_strategy="steps",  # "epoch"
+        save_steps=10_000,
+
         save_safetensors=False,
         push_to_hub=False,
         per_device_train_batch_size=BATCH_SZ,
