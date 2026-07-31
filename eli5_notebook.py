@@ -41,8 +41,6 @@ def group_texts(examples):
 
 def main():
 
-    tokenizer = GPT2TokenizerFast.from_pretrained("aitetic/gpt-r-0.3b")
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if device == "cuda":
         print("GPU available for training:", torch.cuda.device_count(), "device(s)")
@@ -54,6 +52,8 @@ def main():
         print("CUDA not available, training will run on CPU.")
 
     model = GPTRForCausalLM.from_pretrained("aitetic/gpt-r-0.3b", map_location=device)
+
+    tokenizer = GPT2TokenizerFast.from_pretrained("aitetic/gpt-r-0.3b")
 
     ###################################################################
 
