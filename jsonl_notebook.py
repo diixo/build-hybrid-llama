@@ -110,6 +110,7 @@ def main():
         save_safetensors=False,
         push_to_hub=False,
         per_device_train_batch_size=BATCH_SZ,
+        lr_scheduler_type="constant",
     )
 
     trainer = Trainer(
