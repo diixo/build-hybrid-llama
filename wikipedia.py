@@ -58,11 +58,13 @@ def write_split(pool, dataset, split_name):
     all_tokens_np = np.empty((shard_size,), dtype=np.uint16)
     row_amount = 0
     token_count = 0
+    total_token_count = 0
     progress_bar = None
 
     for tokens in pool.imap(tokenize, dataset, chunksize=16):
 
         row_amount += 1
+        total_token_count += len(tokens)
 
         # is there enough space in the current shard for the new tokens?
         if token_count + len(tokens) < shard_size:
@@ -78,6 +80,8 @@ def write_split(pool, dataset, split_name):
             filename = os.path.join(DATA_CACHE_DIR, f"{local_dir}_{split_name}_{shard_index:06d}")
             # split the document into whatever fits in this shard; the remainder goes to next one
             remainder = shard_size - token_count
+            if progress_bar is None:
+                progress_bar = tqdm(total=shard_size, unit="tokens", desc=f"{split_name} shard {shard_index}")
             progress_bar.update(remainder)
             all_tokens_np[token_count:token_count+remainder] = tokens[:remainder]
             write_datafile(filename, all_tokens_np)
@@ -94,7 +98,7 @@ def write_split(pool, dataset, split_name):
         write_datafile(filename, all_tokens_np[:token_count])
         shard_index += 1
 
-    return token_count, row_amount, shard_index
+    return total_token_count, row_amount, shard_index
 
 
 if __name__ == "__main__":
