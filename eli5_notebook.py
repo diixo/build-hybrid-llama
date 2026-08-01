@@ -12,7 +12,7 @@ from transformers import DataCollatorForLanguageModeling
 from transformers import TrainingArguments, Trainer
 from transformers.trainer_utils import get_last_checkpoint
 
-from model_llama import GPTRForCausalLM
+from modeling_gptr import GPTRForCausalLM
 
 
 block_size = 512

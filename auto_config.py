@@ -1,7 +1,7 @@
 
 import json
 from transformers import GPT2TokenizerFast
-from model_llama import GPTRForCausalLM, GPTConfig
+from modeling_gptr import GPTRForCausalLM, GPTConfig
 from pathlib import Path
 import torch
 import os
