@@ -76,9 +76,9 @@ def custom_collate_fn(batch, max_seq_length, pad_token_id, eos_token_id, device,
         # build attention mask from real_len (NOT from token values)
         attn = [1] * real_len + [0] * (batch_max_length - real_len)
 
-        inputs = torch.tensor(padded[:-1])
-        targets = torch.tensor(padded[1:])
-        am = torch.tensor(attn[:-1], dtype=torch.long)
+        inputs = torch.tensor(padded)
+        targets = torch.tensor(padded)
+        am = torch.tensor(attn, dtype=torch.long)
 
         # Replace all but the first padding tokens in targets by ignore_index
         mask = targets == pad_token_id

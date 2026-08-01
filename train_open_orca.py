@@ -168,16 +168,16 @@ def custom_collate_fn(batch, max_seq_length, pad_token_id, eos_token_id, device,
 		padded = sequence + [pad_token_id] * (batch_max_length - real_len)
 		attn = [1] * real_len + [0] * (batch_max_length - real_len)
 
-		inputs = torch.tensor(padded[:-1], dtype=torch.long)
-		targets = torch.tensor(padded[1:], dtype=torch.long)
-		attention_mask = torch.tensor(attn[:-1], dtype=torch.long)
-		target_valid = torch.tensor(attn[1:], dtype=torch.bool)
+		inputs = torch.tensor(padded, dtype=torch.long)
+		targets = torch.tensor(padded, dtype=torch.long)
+		attention_mask = torch.tensor(attn, dtype=torch.long)
+		target_valid = torch.tensor(attn, dtype=torch.bool)
 
 		targets[~target_valid] = ignore_index
 
 		prompt_target_count = max(0, min(prompt_len - 1, targets.numel()))
 		if prompt_target_count > 0:
-			targets[:prompt_target_count] = ignore_index
+			targets[1:prompt_len] = ignore_index
 
 		inputs_lst.append(inputs)
 		targets_lst.append(targets)

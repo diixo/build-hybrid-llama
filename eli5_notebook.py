@@ -15,8 +15,8 @@ from transformers.trainer_utils import get_last_checkpoint
 from model_llama import GPTRForCausalLM
 
 
-block_size = 256
-BATCH_SZ = 4
+block_size = 512
+BATCH_SZ = 7
 EPOCHS = 1
 
 NUM_PROC = 4
@@ -118,6 +118,8 @@ def main():
         data_collator=data_collator,
         processing_class=tokenizer,
     )
+
+    print("Trainer device:", trainer.args.device)
 
     checkpoint = get_last_checkpoint(training_args.output_dir)
     if checkpoint is not None:

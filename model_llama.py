@@ -450,7 +450,16 @@ class GPTRForCausalLM(nn.Module):
                 # do not calculate paddings in loss
                 labels = labels.clone()
                 labels[attention_mask == 0] = -100
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-100)
+
+            # shift logits and labels for causal language modeling:
+            # the token predicted at position t is the next token at position t+1.
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            loss = F.cross_entropy(
+                shift_logits.view(-1, shift_logits.size(-1)),
+                shift_labels.view(-1),
+                ignore_index=-100,
+            )
         output = GPTOutput(logits=logits, loss=loss)
         if return_dict:
             return output
