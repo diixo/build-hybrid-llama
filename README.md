@@ -17,3 +17,19 @@ The trained model will be located in `train_products` directory.
 
 ## GPT-R (GPT-RoPE)
 GPT-R is hybrid of nano-GPT model with RoPE technique.
+
+
+# Runpod.io set-up:
+
+* Optionally:
+```bash
+pip install torch==2.8.0 --extra-index-url https://download.pytorch.org/whl/cu126
+```
+
+* Regular installation:
+```bash
+pip install datasets==3.6.0
+pip install transformers==4.56.1
+pip install huggingface-hub==0.34.3
+pip install accelerate==1.10.1
+```
