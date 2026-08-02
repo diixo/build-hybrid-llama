@@ -28,12 +28,18 @@ if __name__ == "__main__":
 
     prompt = "The future of AI is"
     input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
+
     generated_ids = model.generate(
         input_ids,
         max_new_tokens=50,
-        do_sample=False, eos_token_id=tokenizer.eos_token_id)
+        do_sample=False,
+        eos_token_id=tokenizer.eos_token_id
+    )
 
     output_ids = generated_ids[0].detach().cpu().tolist()
 
-    print(f"\nGenerated text: {tokenizer.decode(output_ids, skip_special_tokens=True)}")
+    print("\n=== Generation example ===")
+    print("Prompt:", prompt)
+    print("Generated:", tokenizer.decode(output_ids, skip_special_tokens=True))
+    print("=== End generation ===\n")
 
