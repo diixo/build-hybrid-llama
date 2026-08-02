@@ -4,6 +4,7 @@
 # https://github.com/diixo/notebooks/blob/main/transformers_doc/en/language_modeling.ipynb
 
 import os
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 import torch
 from datasets import load_dataset
