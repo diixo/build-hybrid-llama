@@ -129,6 +129,8 @@ def main():
     else:
         trainer.train()
 
+    # Save the model config artifacts to the trainer checkpoint directory
+    model.save_latest_checkpoint_config(output_dir)
 
     # The Trainer has already saved checkpoint folders automatically during training
     # in the output_dir according to save_strategy/save_steps.

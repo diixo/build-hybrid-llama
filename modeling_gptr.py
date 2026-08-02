@@ -604,11 +604,14 @@ class GPTRForCausalLM(nn.Module):
         return input_ids
 
 
+    def save_model_config(self, save_directory: str | os.PathLike) -> None:
+        self.config.save_pretrained(save_directory)
+
     def save_pretrained(self, save_directory: str | os.PathLike, file_name: str = "pytorch_model.bin", train_config: dict | None = None, **extra):
         save_directory = Path(save_directory)
         save_directory.mkdir(parents=True, exist_ok=True)
 
-        self.config.save_pretrained(save_directory)
+        self.save_model_config(save_directory)
         state_dict = self.state_dict()
 
         # Always save the user-requested file_name (could be custom)
@@ -628,6 +631,17 @@ class GPTRForCausalLM(nn.Module):
             "extra": extra,
         }
         torch.save(ckpt, save_directory / "model.pt")
+
+
+    def save_latest_checkpoint_config(self, save_directory: str | os.PathLike) -> None:
+        from transformers.trainer_utils import get_last_checkpoint
+
+        output_dir = Path(save_directory)
+        last_checkpoint = get_last_checkpoint(str(output_dir))
+        if last_checkpoint is None:
+            return
+
+        self.save_model_config(last_checkpoint)
 
 
     def save_model(self, save_directory: str, file_name: str = "model.pt", train_config: dict | None = None, **extra):

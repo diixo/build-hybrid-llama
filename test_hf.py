@@ -10,10 +10,10 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"using device: {device}")
 
-    model = GPTRForCausalLM.from_pretrained("aitetic/gptr-noomo-0.3b", map_location=device)
+    model = GPTRForCausalLM.from_pretrained("models/gptr-noomo-0.3b", local_files_only=True, map_location=device)
 
     if model is None:
-        raise SystemExit("Checkpoint 'aitetic/gptr-noomo-0.3b' was not found on Hugging Face Hub or in the local cache.")
+        raise SystemExit("Checkpoint 'models/gptr-noomo-0.3b' was not found on Hugging Face Hub or in the local cache.")
 
     config_obj = getattr(model, "config", None)
     config_dict = vars(config_obj) if config_obj is not None else {}
@@ -24,14 +24,14 @@ if __name__ == "__main__":
     model = model.to(device)
     ############################################################################
 
-    tokenizer = GPT2TokenizerFast.from_pretrained(f"aitetic/gptr-noomo-0.3b", local_files_only=False)
+    tokenizer = GPT2TokenizerFast.from_pretrained(f"models/gptr-noomo-0.3b", local_files_only=True)
 
     prompt = "The future of AI is"
     input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
 
     generated_ids = model.generate(
         input_ids,
-        max_new_tokens=50,
+        max_new_tokens=120,
         do_sample=False,
         eos_token_id=tokenizer.eos_token_id
     )
