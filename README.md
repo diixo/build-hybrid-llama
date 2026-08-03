@@ -1,5 +1,5 @@
 # build-hybrid-llama
-
+* [modeling_gptr.py](modeling_gptr.py) - implementation of GPT-R model
 * run `wikipedia.py` to download and prepare the wikipedia dataset
 * run `main_ddp.py` for a distributed data parallel (DDP) pre-training loop across multiple GPUs
 
@@ -16,7 +16,7 @@ The trained model will be located in `train_products` directory.
 
 
 ## GPT-R (GPT-RoPE)
-(GPT-R)[modeling_gptr.py] is LLaMA-based architectural hybrid of nano-GPT model with RoPE technique.
+[GPT-R](modeling_gptr.py) is LLaMA-based architectural hybrid of nano-GPT model with RoPE technique.
 
 
 ### Runpod.io set-up:
