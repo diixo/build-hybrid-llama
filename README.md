@@ -16,7 +16,7 @@ The trained model will be located in `train_products` directory.
 
 
 ## GPT-R (GPT-RoPE)
-GPT-R is hybrid of nano-GPT model with RoPE technique.
+(GPT-R)[modeling_gptr.py] is LLaMA-based architectural hybrid of nano-GPT model with RoPE technique.
 
 
 ### Runpod.io set-up:
